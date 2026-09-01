@@ -1,0 +1,39 @@
+services:
+  mongo:
+    image: mongo:8.0
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: sentinel
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD:?Set MONGO_PASSWORD in .env}
+    volumes:
+      - mongo_data:/data/db
+    # Database stays on the private container network. Do not publish port 27017.
+    healthcheck:
+      test:
+        ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  api:
+    build: .
+    restart: unless-stopped
+    environment: &backend_env
+      MONGO_URI: mongodb://sentinel:${MONGO_PASSWORD}@mongo:27017/bitcoin_sentinel?authSource=admin
+      MONGO_DB: bitcoin_sentinel
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+    ports:
+      - "${BIND_ADDRESS:-127.0.0.1}:${PORT:-8080}:8000"
+    depends_on:
+      mongo:
+        condition: service_healthy
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    environment: *backend_env
+    depends_on:
+      mongo:
+        condition: service_healthy
+volumes:
+  mongo_data:

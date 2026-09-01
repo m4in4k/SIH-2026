@@ -1,0 +1,8 @@
+fastapi>=0.115,<1
+uvicorn>=0.34,<1
+pymongo>=4.11,<5
+pwdlib[argon2]>=0.2,<1
+python-multipart>=0.0.20,<1
+scikit-learn>=1.6,<2
+networkx>=3.4,<4
+defusedxml>=0.7,<1

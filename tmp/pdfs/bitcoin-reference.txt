@@ -1,0 +1,155 @@
+       SMART INDIA HACKATHON 2026
+                          TITLE PAGE
+
+
+• Problem Statement ID - 26146
+
+• Problem Statement Title - AI-Powered
+  Monitoring & Analysis of Bitcoin
+  Transaction Traffic
+
+• Theme- Blockchain & Cybersecurity
+• PS Category- Software
+• Team ID -
+• Team Name - IF-LOOP
+IF-LOOP
+                                                                     IDEA TITLE
+
+                                                                        BITCOIN SENTINEL AI
+
+  IDEATION                                                                                                SOLUTION
+
+  - Bitcoin is pseudonymous, making suspicious fund movement difficult                                    - Offline platform for bulk Bitcoin transaction and network-metadata
+  to trace.                                                                                               analysis.
+
+  - Investigators need blockchain activity and network metadata in one                                    - Correlates IPs, ports, timestamps, wallets, TXIDs, amounts and
+  view.                                                                                                   GeoIP/ASN data.
+
+  - Large CSV/JSON/XML datasets make manual analysis slow and                                             - Builds an entity-transaction graph linking network and blockchain
+  difficult to prioritize.                                                                                observations.
+
+  - AI/ML should detect unusual behaviour and explain why an entity was                                   - Uses anomaly detection and entity clustering to identify suspicious
+  flagged.                                                                                                behaviour.
+
+  ANALYTICAL SAFEGUARD                                                                                    - Generates ranked alerts with confidence scores and supporting
+  - IP/port data is external network metadata, not a native Bitcoin transaction field.                    evidence.
+  - Correlation should prioritize leads; it should not be treated as proof of wallet ownership or wrongdoing.
+
+
+
+                                                                                      @SIH Idea submission- Template                                                              2
+IF-LOOP                                            TECHNICAL APPROACH
+
+                                                                        DATA TO DECISION PIPELINE
+
+ 1. DATA INGESTION                                                 3. ENTITY GRAPH                                      5. ALERT + DASHBOARD
+
+ - Import CSV / JSON / XML                                         - Nodes: IPs, wallets, TXIDs                         - Ranked suspicious entities
+ - Validate and normalize fields                                   - Edges: sends, receives, connects                   - Confidence score
+ - Read-only offline processing                                    - Link network and blockchain data                   - Reason for each alert
+                                                                   - Reveal connected entities and paths                - Evidence and related transactions
+ 2. FEATURE ENGINEERING                                                                                                 - Graph and timeline views
+                                                                   4. AI / ML ENGINE
+ - Amount, fee and frequency                                                                                            OUTPUT
+ - Time and transaction velocity                                   - Anomaly detection
+ - IP / port relationships                                         - Entity clustering                                  Investigation-ready leads for offline analyst
+ - Wallet interaction features                                     - Risk scoring                                       review.
+ - Geo-country / ASN features                                      - Explainable feature contribution
+
+
+ IMPLEMENTATION NOTES
+ - Start with unsupervised baselines such as Isolation Forest/LOF for anomaly scoring.
+ - Use clustering to group behaviourally similar entities; retain the features that drove each score.
+ - Preserve TXID and timestamp lineage so every alert can be traced back to source records.
+ - Separate ingestion, feature generation, modelling and dashboard layers for repeatable offline runs.
+
+
+
+
+                                                                                       @SIH Idea submission- Template                                                   3
+IF-LOOP                               FEASIBILITY AND VIABILITY
+
+                                                                          FEASIBILITY ANALYSIS
+
+  TECHNICAL FEASIBILITY                                                                               ECONOMIC & SCALABILITY VIABILITY
+
+  - Linux-compatible offline architecture.                                                            - Uses open-source software and commodity hardware.
+  - Python-based data processing and ML pipeline.                                                     - Offline deployment reduces cloud dependency and exposure.
+  - Graph layer represents IP-wallet-TXID relationships.                                              - Modular design supports additional ML models.
+  - Synthetic dataset supports development and testing.                                               - Processing and graph storage can be optimized for larger datasets.
+  - Open-source GeoIP data can enrich country/ASN features.
+                                                                                                      KEY DIFFERENTIATORS
+  OPERATIONAL FEASIBILITY
+                                                                                                      Wallet-only analysis -> network + blockchain correlation
+  - Read-only ingestion avoids live-system dependency.
+  - Modular flow: ingestion -> correlation -> ML -> alerts.                                           Rule-only alerts -> anomaly score + confidence + evidence
+  - Dashboard simplifies complex relationships.
+  - Replayable datasets enable repeatable testing.                                                    Manual review -> ranked, explainable investigative leads
+
+  RISKS & MITIGATIONS
+  - False positives -> combine multiple independent signals and show evidence behind each alert.
+  - Sparse or incomplete network metadata -> keep blockchain-only analysis usable as a fallback.
+  - Entity-linking errors -> expose confidence and source provenance instead of asserting identity.
+  - Model drift -> replay versioned datasets and compare model performance across releases.
+
+
+
+
+                                                                                   @SIH Idea submission- Template                                                            4
+IF-LOOP                                             IMPACT AND BENEFITS
+
+                                                                                 IMPACT & BENEFITS
+
+  IMPACTS                                                                                               BENEFITS
+
+  - Faster identification of anomalous Bitcoin activity.                                                FOR INVESTIGATORS
+  - Connects network observations with blockchain evidence.                                             - Ranked alerts and confidence scores
+  - Moves investigation from isolated transactions to entities.                                         - Evidence-backed reasons for each flag
+  - Prioritizes high-risk leads for analyst review.                                                     - Graph and timeline investigation
+  - Explainable alerts improve reviewability and trust.
+  - Offline processing supports sensitive workflows.                                                    FOR SECURITY TEAMS
+                                                                                                        - Detect unusual fund movement patterns
+                                                                                                        - Correlate IP, wallet and transaction activity
+                                                                                                        - Analyse large datasets repeatedly
+
+                                                                                                        FOR THE SYSTEM
+                                                                                                        - Modular AI/ML architecture
+                                                                                                        - Synthetic-data compatible
+                                                                                                        - Extendable anomaly and clustering models
+
+  MEASURABLE SUCCESS CRITERIA
+  - Detection quality: precision/recall on labelled or carefully constructed synthetic scenarios.
+  - Investigation efficiency: time required to move from a flagged entity to supporting transactions.
+  - Explainability: every alert exposes contributing features, related TXIDs and source metadata.
+  - Reliability: identical input datasets produce reproducible scores and ranked outputs.
+
+                                                                                      @SIH Idea submission- Template                                      5
+IF-LOOP                            RESEARCH AND REFERENCES
+
+                                                                  FUTURE SCOPE & REFERENCES
+
+  FUTURE SCOPE                                                                                           REFERENCES
+
+  - Graph neural networks for entity-risk modelling.                                                     - Smart India Hackathon 2026, Problem Statement 26146:
+  - Temporal graph analysis for multi-stage fund movement.                                                 AI-Powered Monitoring & Analysis of Bitcoin Transaction Traffic.
+  - Advanced wallet/entity clustering.
+  - Human-in-the-loop feedback for alert ranking.                                                        - Required metadata includes timestamp, IP/port, TXID,
+  - Expanded GeoIP / ASN intelligence.                                                                     input/output addresses, amounts, fee, script type and
+  - Faster parallel ingestion and large-scale graph storage.                                               GeoIP/ASN information.
+  - Automated investigation reports from verified evidence.
+                                                                                                         - Research direction: graph-based transaction analysis,
+                                                                                                           anomaly detection, entity clustering and explainable ML.
+
+                                                                                                         - Target: complete offline Linux solution with ingestion,
+                                                                                                           correlation, AI/ML and dashboard visualization.
+
+  RESEARCH GROUNDING
+  - Bitcoin transaction structure provides inputs, outputs, scripts and locktime; block data also exposes timing/confirmation context.
+  - Network observations must be handled as a separate evidence layer and linked only when the dataset supports the correlation.
+  - The system should distinguish anomaly detection from attribution: unusual behaviour is a signal for review, not a conclusion.
+
+
+
+
+                                                                                    @SIH Idea submission- Template                                                            6
+
