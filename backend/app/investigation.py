@@ -162,7 +162,7 @@ def timeline(case_id:str,f:Annotated[TimelineFilters,Query()],user=Depends(curre
                 add({'id':f'{t["_id"]}:{kind}','type':kind,'title':title,'at':t.get(field),'txid':t['txid'],'dataset_id':t['dataset_id'],'detail':{'source_record':t.get('source_record'),'time_basis':field}})
     if f.event_type in {'all','network'}:
         for o in bounded(db.observations.find(base).sort('observed_at',-1)):
-            add({'id':o['_id'],'type':'network','title':'Peer relay observed — origin unknown','at':o['observed_at'],'txid':o['txid'],'dataset_id':o['dataset_id'],'detail':{'sensor':o['sensor'],'peer_ip':o['peer_ip'],'peer_port':o['peer_port']}})
+            add({'id':o['_id'],'type':'network','title':'Network observation — origin unknown','at':o['observed_at'],'txid':o['txid'],'dataset_id':o['dataset_id'],'detail':{'sensor':o['sensor'],'peer_ip':o.get('peer_ip'),'peer_port':o.get('peer_port'),'src_ip':o.get('src_ip'),'dst_ip':o.get('dst_ip'),'src_port':o.get('src_port'),'dst_port':o.get('dst_port'),'country':o.get('country'),'asn':o.get('asn'),'asn_org':o.get('asn_org')}})
     if f.event_type in {'all','pipeline'}:
         for d in bounded(db.datasets.find({'case_id':case_id}).sort('created_at',-1)):
             add({'id':d['_id']+':queued','type':'pipeline','title':'Dataset queued','at':d['created_at'],'dataset_id':d['_id'],'detail':{'filename':d['name']}})

@@ -10,6 +10,7 @@ from app.main import app, allowed_origins, ensure_bootstrap_admin, max_upload
 from app.security import passwords,digest
 from app.worker import tick
 from app.analysis import parse,analyze,training_data
+from app import geoip
 
 @pytest.fixture
 def client():
@@ -157,6 +158,64 @@ def test_csv_xml_and_xml_entity_rejection():
     parsed,_,_=parse(xml.encode(),'sample.xml');assert parsed[0]['outputs'][0]['value_sats']==100
     with pytest.raises(Exception):
         parse(b'<!DOCTYPE x [<!ENTITY secret SYSTEM "file:///etc/passwd">]><transactions>&secret;</transactions>','evil.xml')
+
+def test_sih_csv_geoip_enrichment_and_full_worker_flow(client,monkeypatch):
+    class CountryReader:
+        def country(self, ip):
+            return type('CountryResult', (), {'country': type('Country', (), {'iso_code':'IN','name':'India'})()})()
+    class ASNReader:
+        def asn(self, ip):
+            return type('ASNResult', (), {'autonomous_system_number':64500,'autonomous_system_organization':'Example ASN'})()
+    monkeypatch.setattr(geoip, '_readers', lambda: (CountryReader(), ASNReader()))
+    account(client);cid=case(client)
+    txid='c'*64
+    row='txid,timestamp,src_ip,dst_ip,src_port,dst_port,input_addresses,output_addresses,input_amounts,output_amounts,geo_country,ASN\n'
+    row+=f'{txid},2026-09-01T00:00:00+00:00,8.8.8.8,1.1.1.1,1234,8333,"[""input-address""]","[""output-address""]","[""1.0""]","[""0.999""]",,\n'
+    response=client.post(f'/api/cases/{cid}/datasets',files={'file':('sih.csv',row,'text/csv')})
+    assert response.status_code==202
+    assert tick()
+    dataset=client.get(f'/api/cases/{cid}/datasets').json()[0]
+    assert dataset['status']=='completed'
+    observation=client.get(f'/api/cases/{cid}/transaction-details/{txid}').json()['observations'][0]
+    assert observation['src_country']=='IN'
+    assert observation['src_asn']=='AS64500'
+    assert observation['src_asn_org']=='Example ASN'
+
+def test_missing_geoip_databases_do_not_fail_analysis(client,monkeypatch):
+    monkeypatch.setattr(geoip, '_readers', lambda: (None, None))
+    account(client);cid=case(client)
+    txid='d'*64
+    row='txid,timestamp,src_ip,dst_ip,src_port,dst_port,input_addresses,output_addresses,input_amounts,output_amounts\n'
+    row+=f'{txid},2026-09-01T00:00:00+00:00,10.0.0.1,203.0.113.1,1234,8333,"[""in"" ]","[""out""]","[""1.0""]","[""1.0""]"\n'
+    assert client.post(f'/api/cases/{cid}/datasets',files={'file':('no-geoip.csv',row,'text/csv')}).status_code==202
+    assert tick()
+    dataset=client.get(f'/api/cases/{cid}/datasets').json()[0]
+    assert dataset['status']=='completed'
+    observation=client.get(f'/api/cases/{cid}/transaction-details/{txid}').json()['observations'][0]
+    assert observation.get('country') is None and observation.get('asn') is None
+
+def test_flat_csv_compatibility_preserves_strict_transaction_validation(client):
+    account(client);cid=case(client)
+    txid='a'*64
+    csv_text='tx_id,from_address,to_address,amount_btc,fee_btc,input_count,output_count\n'
+    csv_text+=f'{txid},source-wallet,target-wallet,1.23456789,0.00001000,2,3\n'
+    parsed,_,_=parse(csv_text.encode(),'flat.csv')
+    assert parsed[0]['txid']==txid
+    assert sum(o['value_sats'] for o in parsed[0]['outputs'])==123456789
+    assert parsed[0]['fee_sats']==1000
+    assert len(parsed[0]['inputs'])==2 and len(parsed[0]['outputs'])==3
+    response=client.post(f'/api/cases/{cid}/datasets',files={'file':('flat.csv',csv_text,'text/csv')})
+    assert response.status_code==202
+    assert tick()
+    dataset=client.get(f'/api/cases/{cid}/datasets').json()[0]
+    assert dataset['status']=='completed' and dataset['count']==1
+    assert client.get(f'/api/cases/{cid}/alerts').status_code==200
+    invalid=csv_text.replace(txid,'not-a-hex-txid')
+    response=client.post(f'/api/cases/{cid}/datasets',files={'file':('invalid-flat.csv',invalid,'text/csv')})
+    assert response.status_code==202
+    assert tick()
+    failed=next(d for d in client.get(f'/api/cases/{cid}/datasets').json() if d['name']=='invalid-flat.csv')
+    assert failed['status']=='failed' and failed['progress']==0 and 'Record 1' in failed['error']
 
 def test_rich_transaction_detail_and_combined_filters(client):
     account(client);cid=case(client)

@@ -20,6 +20,8 @@ def process(dataset_id):
     try:
         record_stage('validation','started',{},now())
         payload=db.uploads.find_one({'_id':dataset_id})
+        if not payload:
+            raise ValueError('Uploaded dataset payload is missing; the dataset cannot be processed.')
         rows,observations,warnings=parse(bytes(payload['content']),d['name'])
         record_stage('validation','completed',{'valid_records':len(rows),'warnings':len(warnings)},now())
         db.datasets.update_one({'_id':dataset_id},{'$set':{'progress':25,'heartbeat':now()}})

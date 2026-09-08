@@ -104,6 +104,13 @@ class Observation(BaseModel):
     dst_port: int | None = Field(default=None, ge=1, le=65535)
     country: str | None = Field(default=None, min_length=2, max_length=100)
     asn: str | None = Field(default=None, max_length=80)
+    asn_org: str | None = Field(default=None, max_length=200)
+    src_country: str | None = Field(default=None, min_length=2, max_length=100)
+    dst_country: str | None = Field(default=None, min_length=2, max_length=100)
+    src_asn: str | None = Field(default=None, max_length=80)
+    dst_asn: str | None = Field(default=None, max_length=80)
+    src_asn_org: str | None = Field(default=None, max_length=200)
+    dst_asn_org: str | None = Field(default=None, max_length=200)
     sensor: str = Field(min_length=1, max_length=100)
     @field_validator('peer_ip', 'src_ip', 'dst_ip')
     @classmethod
