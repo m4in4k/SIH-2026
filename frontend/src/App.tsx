@@ -11,7 +11,9 @@ import {
   Database,
   FileText,
   FolderOpen,
+  Globe,
   LayoutDashboard,
+  Layers,
   LogIn,
   LogOut,
   Network,
@@ -30,6 +32,9 @@ import {
   Info,
 } from "lucide-react";
 import Graph from "./Graph";
+import GeoMap from "./GeoMap";
+import Clusters from "./Clusters";
+import MLExplain from "./MLExplain";
 import {
   RecordsView,
   Timeline,
@@ -43,15 +48,21 @@ import {
   btc,
   demoAlerts,
   demoCase,
+  demoClusters,
   demoDataset,
+  demoGeoSummary,
   demoGraph,
+  demoMLExplain,
   demoSummary,
   demoTx,
   download,
   short,
   type Alert,
   type Case,
+  type Cluster,
   type Dataset,
+  type GeoSummary,
+  type MLExplanation,
   type Summary,
   type Tx,
   type User,
@@ -62,6 +73,7 @@ type Page =
   | "Alert queue"
   | "Investigation timeline"
   | "Graph explorer"
+  | "Entity clusters"
   | "Datasets"
   | "Team & access";
 const nav = [
@@ -69,6 +81,7 @@ const nav = [
   { name: "Transactions", icon: Activity },
   { name: "Alert queue", icon: ShieldCheck },
   { name: "Graph explorer", icon: Network },
+  { name: "Entity clusters", icon: Layers },
   { name: "Investigation timeline", icon: Clock },
   { name: "Datasets", icon: Database },
 ] as const;
@@ -110,7 +123,8 @@ export default function App() {
     [notice, setNotice] = useState(""),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
-    [members, setMembers] = useState<any[]>([]);
+    [members, setMembers] = useState<any[]>([]),
+    [mlExplain, setMlExplain] = useState<MLExplanation | null>(null);
   const datasetInput = useRef<HTMLInputElement>(null);
   const pendingDataset = useRef<string | null>(null);
   const activeCase = useRef(current.id);
@@ -410,6 +424,18 @@ export default function App() {
       setBusy(false);
     }
   }
+  async function openAlertWithExplain(alert: Alert) {
+    setSelected(alert);
+    if (!demo && current.id && alert.id) {
+      try {
+        const explain = await api(`/cases/${current.id}/ml-explain/${alert.id}`);
+        setMlExplain(explain);
+      } catch {
+        // Non-critical — explainability is a best-effort enhancement
+      }
+    }
+  }
+
   async function report() {
     try {
       const data = demo
@@ -469,11 +495,11 @@ export default function App() {
           </thead>
           <tbody>
             {rows.map((a) => (
-              <tr key={a.id} onClick={() => setSelected(a)}>
+              <tr key={a.id} onClick={() => void openAlertWithExplain(a)}>
                 <td>
                   <button
                     className="text-button"
-                    onClick={() => setSelected(a)}
+                    onClick={() => void openAlertWithExplain(a)}
                   >
                     {a.title}
                   </button>
@@ -643,11 +669,13 @@ export default function App() {
                       ? "Follow observations, detection stages, and analyst actions in chronological order."
                       : page === "Graph explorer"
                         ? "Trace observed output relationships. Ownership remains unknown."
-                        : page === "Team & access"
-                          ? "Give the right people access to the right investigation."
-                          : page === "Transactions"
-                            ? "Search and inspect the transaction records in this case."
-                            : "Prioritize unusual activity. Review the evidence behind every signal."}
+                        : page === "Entity clusters"
+                          ? "Wallet clusters (common-input-ownership) and IP clusters (co-occurrence) ranked by risk score."
+                          : page === "Team & access"
+                            ? "Give the right people access to the right investigation."
+                            : page === "Transactions"
+                              ? "Search and inspect the transaction records in this case."
+                              : "Prioritize unusual activity. Review the evidence behind every signal."}
               </p>
             </div>
             <div className="heading-actions">
@@ -956,8 +984,30 @@ export default function App() {
                   </div>
                 </section>
               </div>
+              {/* Geo Intelligence panel */}
+              <section className="panel geo-overview-panel">
+                <div className="panel-heading">
+                  <div>
+                    <h2>Network relay geography</h2>
+                    <p>IP observations by country — Tor exits and VPN infrastructure highlighted</p>
+                  </div>
+                  <button
+                    className="icon-button"
+                    aria-label="Open entity clusters"
+                    onClick={() => navigate("Entity clusters")}
+                  >
+                    <Globe size={17} />
+                  </button>
+                </div>
+                <GeoMap
+                  caseId={current.id}
+                  demo={demo}
+                  demoData={demoGeoSummary}
+                />
+              </section>
             </>
           )}
+
           {(page === "Alert queue" || page === "Transactions") && (
             <RecordsView
               key={`${page}:${current.id}:${demo}`}
@@ -1039,6 +1089,24 @@ export default function App() {
               </div>
             </section>
           )}
+          {page === "Entity clusters" && (
+            <section className="panel" style={{ padding: 0, overflow: "hidden" }}>
+              <div className="panel-heading" style={{ padding: "20px 24px 0" }}>
+                <div>
+                  <h2>Entity Clusters</h2>
+                  <p>Wallet groups (common-input-ownership) · IP relay clusters (co-occurrence) · Risk-scored</p>
+                </div>
+                <span className="chip">DBSCAN + Union-Find</span>
+              </div>
+              <Clusters
+                key={`${current.id}:${demo}`}
+                caseId={current.id}
+                demo={demo}
+                demoClusters={demoClusters}
+              />
+            </section>
+          )}
+
           {page === "Datasets" && (
             <>
               <div className="import-grid">
@@ -1521,6 +1589,15 @@ export default function App() {
             <DetectionEvidence
               alert={selected}
               dataset={datasets.find((d) => d.id === selected.dataset_id)}
+            />
+            <MLExplain
+              explain={
+                demo
+                  ? demoMLExplain(selected)
+                  : mlExplain?.alert_id === selected.id
+                    ? mlExplain
+                    : null
+              }
             />
             <h3>Why this was flagged</h3>
             {selected.reasons.map((r) => (
