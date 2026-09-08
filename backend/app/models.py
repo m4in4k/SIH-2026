@@ -96,14 +96,33 @@ class Transaction(BaseModel):
 class Observation(BaseModel):
     txid: str = Field(pattern=r'^[0-9a-f]{64}$')
     observed_at: datetime
-    peer_ip: str
-    peer_port: int = Field(ge=1, le=65535)
+    peer_ip: str | None = None
+    peer_port: int | None = Field(default=None, ge=1, le=65535)
+    src_ip: str | None = None
+    dst_ip: str | None = None
+    src_port: int | None = Field(default=None, ge=1, le=65535)
+    dst_port: int | None = Field(default=None, ge=1, le=65535)
+    country: str | None = Field(default=None, min_length=2, max_length=100)
+    asn: str | None = Field(default=None, max_length=80)
     sensor: str = Field(min_length=1, max_length=100)
-    @field_validator('peer_ip')
+    @field_validator('peer_ip', 'src_ip', 'dst_ip')
     @classmethod
     def ip_address(cls, value):
+        if value is None:
+            return value
         import ipaddress
         return str(ipaddress.ip_address(value))
+
+    @model_validator(mode='after')
+    def normalize_network_fields(self):
+        if self.src_ip is None and self.peer_ip is not None:
+            self.src_ip = self.peer_ip
+        if self.src_port is None and self.peer_port is not None:
+            self.src_port = self.peer_port
+        if self.src_ip is None and self.dst_ip is None:
+            raise ValueError('Provide peer_ip, src_ip, or dst_ip for a network observation.')
+        return self
+
     @field_validator('observed_at')
     @classmethod
     def aware(cls, value):

@@ -73,6 +73,26 @@ export default function Graph({
               },
             },
             {
+              selector: 'node[kind="wallet"]',
+              style: {
+                shape: "ellipse",
+                "background-color": "#263744",
+                "border-color": "#8ba7ba",
+                width: 34,
+                height: 34,
+              },
+            },
+            {
+              selector: 'node[kind="ip"]',
+              style: {
+                shape: "hexagon",
+                "background-color": "#382d22",
+                "border-color": "#e8b36a",
+                width: 34,
+                height: 34,
+              },
+            },
+            {
               selector: "node[?focus]",
               style: {
                 "background-color": "#b8893f",
@@ -146,7 +166,11 @@ export default function Graph({
         </span>
         <span>
           <i className="key-dot slate" />
-          Output
+          Wallet / output
+        </span>
+        <span>
+          <i className="key-dot cyan" />
+          Network IP
         </span>
         <span>
           <i className="key-dot amber" />

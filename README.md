@@ -147,7 +147,7 @@ JSON accepts a list of transactions or an object with `transactions` and optiona
 - Optional transaction metadata: `confirmed` (boolean), `confirmations`, `block_height`, `block_hash`, `size_bytes`, `weight`, `version`, and `locktime`. Outputs may include `script_type` and `script_hex`; inputs may include `sequence`. CSV/XML parsers normalize scalar values before validation.
 - A timestamp must carry a timezone; store observation and block times separately. Charts explicitly combine available observation/block timestamps and omit records lacking both. They are not precise creation-time charts.
 - CSV uses the same top-level fields with JSON-encoded `inputs` and `outputs` cells. XML examples use output and input attributes; XML entity expansion is disabled.
-- An optional network observation has `txid`, `observed_at`, `peer_ip`, `peer_port`, and `sensor`. These are preserved in reports and graph API responses, not treated as evidence of origin or ownership. The current visual graph shows only blockchain output relationships.
+- An optional network observation has `txid`, `observed_at`, `sensor`, and either legacy `peer_ip`/`peer_port` or SIH-style `src_ip`, `dst_ip`, `src_port`, and `dst_port`. Optional `country` and `asn` values are accepted when supplied by an offline source. These are correlated only to the referenced transaction, preserved in reports, and never treated as evidence of origin or ownership. The graph labels IP, transaction, and wallet/address nodes separately; unmatched network records remain unmatched.
 - Limits: 4 MB/file on Vercel (to stay below its 4.5 MB function body limit), 10 MB/file when self-hosted, 10,000 transaction records/file, 500 inputs or outputs/record, and 100,000 records/case for summary scans. These are explicit prototype bounds, not Bitcoin protocol limits.
 
 ## Analysis behavior and limits
@@ -158,7 +158,7 @@ For at least 40 accepted records, scores are mid-rank percentiles **within the i
 
 Explanations list actual feature values and triggered rules; they do not claim exact model feature attribution. Legitimate batching and consolidation can trigger the same rules. There is no validated precision/recall claim.
 
-Reports include up to 1,000 alerts and 200 recent audit entries, with explicit limits. Graphs show at most 25 transactions within two hops and selected outputs, retaining connecting outputs where possible. Truncation is labeled. Whole-blockchain traversal, GeoIP enrichment, identity clustering, and live collection are not implemented.
+Reports include up to 1,000 alerts and 200 recent audit entries, with explicit limits. Graphs show at most 25 transactions within two hops and selected outputs, retaining connecting outputs where possible. Truncation is labeled. A GeoIP database is not bundled: country/ASN enrichment is displayed only when present in the imported offline dataset, and unavailable enrichment never blocks core analysis. Identity clustering and live collection are not implemented.
 
 Use one worker for the Docker/local prototype. Queued jobs survive restarts. Vercel processes imports within the request and does not start this worker. Running jobs older than an hour without progress become visible failures; failed payloads are retained for administrator inspection. Automatic retry/reprocessing is not implemented. A fresh case can be used to retry a corrected or unchanged source file. Source import is schema validation, not a guarantee of chain validity, input-value conservation, authenticity, or absence of double spending.
 

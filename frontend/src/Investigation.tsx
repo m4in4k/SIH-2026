@@ -62,6 +62,18 @@ export function DetectionEvidence({
           <StagePill stage={alert.first_detected_stage} />
         </div>
         <div>
+          <small>Risk / priority</small>
+          <span>
+            {alert.risk_score == null ? "Not recorded" : `${alert.risk_score}/100`} · {alert.priority || alert.severity}
+          </span>
+        </div>
+        <div>
+          <small>Anomaly score</small>
+          <span>
+            {alert.model_version?.startsWith("rules-only") ? "Not scored" : `${alert.score}/100`}
+          </span>
+        </div>
+        <div>
           <small>Detected at</small>
           <span>{utc(alert.detected_at)}</span>
         </div>
@@ -696,8 +708,14 @@ type Detail = {
   };
   observations: {
     sensor: string;
-    peer_ip: string;
-    peer_port: number;
+    peer_ip?: string | null;
+    peer_port?: number | null;
+    src_ip?: string | null;
+    dst_ip?: string | null;
+    src_port?: number | null;
+    dst_port?: number | null;
+    country?: string | null;
+    asn?: string | null;
     observed_at: string;
   }[];
   spenders_truncated: boolean;
@@ -1025,10 +1043,13 @@ export function TransactionDrawer({
                 {detail.observations.map((o, i) => (
                   <div className="reference-card" key={i}>
                     <strong>
-                      {o.peer_ip}:{o.peer_port}
+                      {o.src_ip || o.peer_ip || "Unknown source"}
+                      {o.src_port || o.peer_port ? `:${o.src_port || o.peer_port}` : ""}
+                      {o.dst_ip ? ` → ${o.dst_ip}${o.dst_port ? `:${o.dst_port}` : ""}` : ""}
                     </strong>
                     <small>
                       {o.sensor} · {utc(o.observed_at)}
+                      {o.country || o.asn ? ` · ${o.country || "country unavailable"} · ${o.asn || "ASN unavailable"}` : " · enrichment unavailable"}
                     </small>
                   </div>
                 ))}

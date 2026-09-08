@@ -346,14 +346,23 @@ def graph(case_id:str,txid:str,user=Depends(current_user)):
         shown.extend(o for o in t['outputs'][:8] if o not in shown)
         if len(shown)<len(t['outputs']):truncated=True
         for o in shown:
-            oid=f'{t["txid"]}:{o["index"]}'
-            graph.add_node(oid,kind='output',label=f'{o["value_sats"]/1e8:.5g} BTC',focus=False)
-            graph.add_edge(t['txid'],oid,label='creates')
+            address=o.get('address')
+            oid=f'wallet:{address}' if address else f'{t["txid"]}:{o["index"]}'
+            graph.add_node(oid,kind='wallet' if address else 'output',label=address or f'{o["value_sats"]/1e8:.5g} BTC',focus=False)
+            graph.add_edge(t['txid'],oid,label='sent to' if address else 'creates')
     for t in chosen.values():
         for i in t['inputs']:
             oid=f'{i["prev_txid"]}:{i["prev_vout"]}'
             if oid in graph:
                 graph.add_edge(oid,t['txid'],label='spent by')
+    for observation in db.observations.find({**query,'txid':{'$in':list(chosen)}}).limit(100):
+        for field in ('src_ip','dst_ip'):
+            ip=observation.get(field)
+            if not ip:
+                continue
+            node_id=f'ip:{ip}'
+            graph.add_node(node_id,kind='ip',label=ip,focus=False,country=observation.get('country'),asn=observation.get('asn'))
+            graph.add_edge(node_id,observation['txid'],label='observed')
     return {'nodes':[{'data':{'id':n,**attrs}} for n,attrs in graph.nodes(data=True)],
             'edges':[{'data':{'id':f'{a}>{b}','source':a,'target':b,**attrs}} for a,b,attrs in graph.edges(data=True)],
             'truncated':truncated,'network_observations':[public(o) for o in db.observations.find({**query,'txid':txid}).limit(50)],

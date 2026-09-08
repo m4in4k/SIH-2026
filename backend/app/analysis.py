@@ -46,6 +46,14 @@ def parse(content: bytes, filename: str):
             for key in ['fee_sats', 'vsize', 'confirmations', 'block_height', 'size_bytes', 'weight', 'version', 'locktime']:
                 row[key] = int(row[key]) if row.get(key) else None
             rows.append(row)
+        observations = [
+            {**node.attrib, **{child.tag: child.text for child in node}}
+            for node in root.findall('observation')
+        ]
+        for observation in observations:
+            for key in ['peer_port', 'src_port', 'dst_port']:
+                if observation.get(key):
+                    observation[key] = int(observation[key])
     else:
         raise ValueError('Use .json, .csv, or .xml files.')
     if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_RECORDS:
@@ -72,7 +80,11 @@ def parse(content: bytes, filename: str):
             duplicate += 1
             continue
         seen.add(tx['txid']); tx['source_record'] = n; result.append(tx)
-    obs = [Observation.model_validate(o).model_dump() for o in observations]
+    try:
+        obs = [Observation.model_validate(o).model_dump() for o in observations]
+    except ValidationError as exc:
+        err = exc.errors()[0]
+        raise ValueError(f'Observation: {".".join(map(str, err["loc"]))}: {err["msg"]}') from exc
     warnings = []
     if duplicate:
         warnings.append(f'{duplicate} duplicate TXIDs within this file were skipped.')
@@ -133,8 +145,10 @@ def analyze(rows, on_stage=None):
         if signals:
             reasons=[signal['reason'] for signal in signals]
             reasons.append(f'Feature evidence: {len(t["inputs"])} inputs, {len(t["outputs"])} outputs, total {sum(o["value_sats"] for o in t["outputs"])} satoshis. Descriptive evidence, not exact model attribution.')
+            priority='high' if signals[0]['stage']=='rule_detection' else 'medium'
+            risk_score=round(max(70 if priority == 'high' else 0, score), 1)
             alerts.append({'txid':t['txid'],'title':signals[0]['title'],
-                'severity':'high' if signals[0]['stage']=='rule_detection' else 'medium',
+                'severity':priority,'priority':priority,'risk_score':risk_score,
                 'score':score,'reasons':reasons,'status':'open','detections':signals,
                 'first_detected_stage':signals[0]['stage'],'detection_stages':list(dict.fromkeys(x['stage'] for x in signals)),
                 'detected_at':signals[0]['detected_at'],'transaction_observed_at':t.get('observed_at'),

@@ -50,6 +50,8 @@ export type Alert = {
   txid: string;
   title: string;
   severity: string;
+  priority?: string;
+  risk_score?: number;
   score: number;
   reasons: string[];
   alternative: string;
