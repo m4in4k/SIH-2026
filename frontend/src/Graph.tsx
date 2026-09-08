@@ -93,6 +93,26 @@ export default function Graph({
               },
             },
             {
+              selector: 'node[kind="country"]',
+              style: {
+                shape: "diamond",
+                "background-color": "#203538",
+                "border-color": "#55c8c7",
+                width: 29,
+                height: 29,
+              },
+            },
+            {
+              selector: 'node[kind="asn"]',
+              style: {
+                shape: "round-diamond",
+                "background-color": "#302943",
+                "border-color": "#a78bda",
+                width: 31,
+                height: 31,
+              },
+            },
+            {
               selector: "node[?focus]",
               style: {
                 "background-color": "#b8893f",
@@ -171,6 +191,10 @@ export default function Graph({
         <span>
           <i className="key-dot cyan" />
           Network IP
+        </span>
+        <span>
+          <i className="key-dot violet" />
+          Country / ASN
         </span>
         <span>
           <i className="key-dot amber" />

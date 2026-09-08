@@ -709,6 +709,9 @@ select option {
 .key-dot.cyan {
   background: #8ba7ba;
 }
+.key-dot.violet {
+  background: #a78bda;
+}
 .chart-note {
   margin-left: auto;
   font-size: 9px;

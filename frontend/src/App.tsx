@@ -487,7 +487,7 @@ export default function App() {
               <th>Signal / transaction</th>
               <th>Priority</th>
               <th>
-                Anomaly score <Info size={12} />
+                Lead confidence <Info size={12} />
               </th>
               <th>Status</th>
               <th />
@@ -511,13 +511,11 @@ export default function App() {
                 </td>
                 <td>
                   <span className="score">
-                    {a.model_version?.startsWith("rules-only")
-                      ? "—"
-                      : a.score.toFixed(0)}
+                    {(a.confidence_score ?? a.risk_score ?? a.score).toFixed(0)}
                     <small>/100</small>
                   </span>
                   <span className="score-track">
-                    <i style={{ width: `${a.score}%` }} />
+                    <i style={{ width: `${a.confidence_score ?? a.risk_score ?? a.score}%` }} />
                   </span>
                 </td>
                 <td>

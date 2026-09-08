@@ -37,6 +37,8 @@ def indexes(db):
     db.observations.create_index([('case_id', 1), ('dataset_id', 1), ('country', 1)])
     db.clusters.create_index([('case_id', 1), ('dataset_id', 1), ('type', 1), ('risk_score', -1)])
     db.clusters.create_index([('case_id', 1), ('cluster_id', 1)])
+    db.observations.create_index([('case_id', 1), ('src_ip', 1)])
+    db.observations.create_index([('case_id', 1), ('dst_ip', 1)])
 
 def public(doc):
     if not doc:

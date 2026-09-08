@@ -17,6 +17,12 @@ After that, open **Sentinel Tool** from the applications menu or desktop. The fi
 
 New investigators can create a local account from the sign-in screen. Accounts, cases, imported evidence, review state, and results persist in the local `sentinel-tool_mongo_data` Docker volume.
 
+### GeoIP data
+
+For country and ASN enrichment, the release must contain compatible, licensed MaxMind DB files at `geoip/GeoLite2-Country.mmdb` and `geoip/GeoLite2-ASN.mmdb`. The packaging script copies MMDB files into the transferable release, and Compose mounts them read-only into both the API and analysis worker. The offline workstation never downloads GeoIP data or calls a lookup service.
+
+Sentinel checks both files on startup through `/api/health`. During import it records a **GeoIP enrichment** stage and displays source/destination country and ASN evidence in transaction details, the timeline, link graph, and exported report. If a file is absent or invalid, the stage is visibly skipped and transaction analysis continues.
+
 ## Normal use
 
 1. Open **Sentinel Tool**.
@@ -38,5 +44,7 @@ Run this only on an internet-connected build machine:
 ```bash
 bash ./scripts/package-offline.sh 0.2.0
 ```
+
+Add the licensed MMDB files under `geoip/` before running that command if the release must include offline enrichment.
 
 Transfer the generated `dist-offline/Sentinel-Tool-0.2.0-linux-x86_64` directory to the offline workstation. Build on the same CPU architecture as the destination.

@@ -20,14 +20,10 @@ from defusedxml import ElementTree
 from pydantic import ValidationError
 from sklearn.ensemble import IsolationForest
 from .models import Transaction, Observation
-from .geoip import enrich_observation
 
 MODEL_VERSION = 'sentinel-iforest-shap-v3'
 MAX_RECORDS = 10000
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
 FEATURE_NAMES = [
     'input_count',
     'output_count',
@@ -57,7 +53,7 @@ FEATURE_DESCRIPTIONS = {
     'is_off_hours': 'Binary: transaction observed between 00:00–05:00 UTC',
     'unique_ip_count': 'Number of unique IPs that relayed this TX (network anomaly)',
     'cross_border_flag': 'Binary: TX relayed from >1 country',
-    'tor_vpn_flag': 'Binary: TX relayed via Tor or known VPN ASN',
+    'tor_vpn_ip_flag': 'Binary: TX relayed via Tor or known VPN ASN',
     'tx_size_bytes': 'Transaction size in bytes (proxy for complexity)',
     'fee_per_output': 'Log of fee per output (normalised complexity cost)',
 }
@@ -66,8 +62,7 @@ FEATURE_DESCRIPTIONS = {
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
-=======
->>>>>>> 20a0cb789f0b780745cb32d39b36cd06620b3b24
+
 def _btc_to_sats(value, field, record):
     try:
         sats = Decimal(str(value)) * Decimal(100_000_000)
@@ -77,8 +72,8 @@ def _btc_to_sats(value, field, record):
         raise ValueError(f'Record {record}: {field} must be a non-negative whole satoshi amount.')
     return int(sats)
 
+
 def _flat_csv_row(row, record):
-    """Convert the simple classroom CSV shape into the strict UTXO shape."""
     required = {'tx_id', 'from_address', 'to_address', 'amount_btc', 'fee_btc', 'input_count', 'output_count'}
     missing = sorted(required - set(row))
     if missing:
@@ -91,21 +86,18 @@ def _flat_csv_row(row, record):
     if input_count < 0 or output_count < 1:
         raise ValueError(f'Record {record}: input_count must be non-negative and output_count must be positive.')
     txid = row['tx_id'].strip().lower()
-    # Keep Transaction's hexadecimal validation as the final authority.
-    outputs = []
     total_sats = _btc_to_sats(row['amount_btc'], 'amount_btc', record)
     base, remainder = divmod(total_sats, output_count)
-    for index in range(output_count):
-        outputs.append({
-            'index': index,
-            'value_sats': base + (1 if index < remainder else 0),
-            'address': row['to_address'].strip() or None,
-        })
+    outputs = [
+        {'index': index, 'value_sats': base + (1 if index < remainder else 0),
+         'address': row['to_address'].strip() or None}
+        for index in range(output_count)
+    ]
     inputs = [
         {'prev_txid': sha256(f'{txid}:flat-input:{index}'.encode()).hexdigest(), 'prev_vout': 0}
         for index in range(input_count)
     ]
-    normalized = {
+    return {
         'txid': txid,
         'observed_at': row.get('timestamp') or row.get('observed_at') or None,
         'inputs': inputs,
@@ -113,15 +105,13 @@ def _flat_csv_row(row, record):
         'fee_sats': _btc_to_sats(row['fee_btc'], 'fee_btc', record),
         'vsize': 1,
     }
-    if row.get('from_address'):
-        normalized['from_address'] = row['from_address'].strip()
-    return normalized
+
 
 def _sih_row(row, record):
-    """Convert SIH network/blockchain rows into the existing strict UTXO shape."""
     required = {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}
     if not required.issubset(row):
         return None
+
     def values(field):
         value = row.get(field) or []
         if isinstance(value, str):
@@ -129,86 +119,57 @@ def _sih_row(row, record):
         if not isinstance(value, list):
             raise ValueError(f'Record {record}: {field} must be an array.')
         return value
+
     input_addresses = values('input_addresses')
     output_addresses = values('output_addresses')
+    input_amounts = values('input_amounts')
     output_amounts = values('output_amounts')
     if len(output_addresses) != len(output_amounts) or not output_addresses:
         raise ValueError(f'Record {record}: output_addresses and output_amounts must have the same non-zero length.')
-    if len(input_addresses) != len(values('input_amounts')):
+    if len(input_addresses) != len(input_amounts):
         raise ValueError(f'Record {record}: input_addresses and input_amounts must have the same length.')
     txid = str(row['txid']).strip().lower()
-    inputs = [{'prev_txid': sha256(f'{txid}:input:{address}:{index}'.encode()).hexdigest(), 'prev_vout': 0}
-              for index, address in enumerate(input_addresses)]
-    outputs = [{'index': index, 'value_sats': _btc_to_sats(amount, 'output_amounts', record),
-                'address': str(address).strip() or None}
-               for index, (address, amount) in enumerate(zip(output_addresses, output_amounts))]
-    normalized = {'txid': txid, 'observed_at': row.get('timestamp') or row.get('observed_at'),
-                  'inputs': inputs, 'outputs': outputs, 'fee_sats': None, 'vsize': 1}
+    inputs = [
+        {'prev_txid': sha256(f'{txid}:input:{address}:{index}'.encode()).hexdigest(), 'prev_vout': 0}
+        for index, address in enumerate(input_addresses)
+    ]
+    outputs = [
+        {'index': index, 'value_sats': _btc_to_sats(amount, 'output_amounts', record),
+         'address': str(address).strip() or None}
+        for index, (address, amount) in enumerate(zip(output_addresses, output_amounts))
+    ]
+    normalized = {
+        'txid': txid,
+        'observed_at': row.get('timestamp') or row.get('observed_at'),
+        'inputs': inputs,
+        'outputs': outputs,
+        'fee_sats': None,
+        'vsize': 1,
+    }
     if row.get('fee_btc') not in (None, ''):
         normalized['fee_sats'] = _btc_to_sats(row['fee_btc'], 'fee_btc', record)
     return normalized
 
+
 def _network_observation(row):
     if not row.get('txid') or not (row.get('src_ip') or row.get('dst_ip')):
         return None
-    observation = {key: row[key] for key in (
-        'txid', 'src_ip', 'dst_ip', 'src_port', 'dst_port', 'country', 'geo_country',
-        'asn', 'ASN', 'asn_org', 'timestamp', 'observed_at'
-    ) if row.get(key) not in (None, '')}
+    observation = {
+        key: row[key] for key in (
+            'txid', 'src_ip', 'dst_ip', 'src_port', 'dst_port', 'country', 'geo_country',
+            'asn', 'ASN', 'asn_org', 'timestamp', 'observed_at', 'sensor'
+        ) if row.get(key) not in (None, '')
+    }
     if 'geo_country' in observation and 'country' not in observation:
         observation['country'] = observation.pop('geo_country')
     if 'ASN' in observation and 'asn' not in observation:
         observation['asn'] = observation.pop('ASN')
-    observation['observed_at'] = observation.get('observed_at') or observation.get('timestamp')
-    observation['sensor'] = row.get('sensor') or 'dataset-import'
+    observation['observed_at'] = observation.get('observed_at') or observation.pop('timestamp', None)
+    observation['sensor'] = observation.get('sensor') or 'dataset-import'
     for key in ('src_port', 'dst_port'):
         if key in observation:
             observation[key] = int(observation[key])
-    return enrich_observation(observation)
-<<<<<<< HEAD
-=======
-FEATURE_NAMES = [
-    'input_count',
-    'output_count',
-    'log_output_total',
-    'largest_output_share',
-    'log_fee_rate',
-    'fee_rate_missing',
-    'output_value_entropy',
-    'round_output_fraction',
-    'is_off_hours',
-    'unique_ip_count',
-    'cross_border_flag',
-    'tor_vpn_ip_flag',
-    'tx_size_bytes',
-    'fee_per_output',
-]
-
-FEATURE_DESCRIPTIONS = {
-    'input_count': 'Number of inputs (high = consolidation/mixing)',
-    'output_count': 'Number of outputs (high = fan-out/mixing)',
-    'log_output_total': 'Log of total output value in satoshis',
-    'largest_output_share': 'Fraction of value in the largest output (1.0 = single recipient)',
-    'log_fee_rate': 'Log of fee rate sat/vbyte (high = urgency; missing = anomalous)',
-    'fee_rate_missing': 'Binary: fee data absent from record',
-    'output_value_entropy': 'Shannon entropy of output values (0=uniform, high=varied)',
-    'round_output_fraction': 'Fraction of outputs with round BTC values (structuring indicator)',
-    'is_off_hours': 'Binary: transaction observed between 00:00–05:00 UTC',
-    'unique_ip_count': 'Number of unique IPs that relayed this TX (network anomaly)',
-    'cross_border_flag': 'Binary: TX relayed from >1 country',
-    'tor_vpn_flag': 'Binary: TX relayed via Tor or known VPN ASN',
-    'tx_size_bytes': 'Transaction size in bytes (proxy for complexity)',
-    'fee_per_output': 'Log of fee per output (normalised complexity cost)',
-}
-
-
-# ---------------------------------------------------------------------------
-# Parsing
-# ---------------------------------------------------------------------------
->>>>>>> a2af0ae (feat: implement backend database schema, analytical processing pipeline, and frontend dashboard for transaction monitoring and ML anomaly detection)
-=======
->>>>>>> 8bd8a2169d83afd7ad90d8125606ba357648d268
->>>>>>> 20a0cb789f0b780745cb32d39b36cd06620b3b24
+    return observation
 
 def parse(content: bytes, filename: str):
     text = content.decode('utf-8-sig')
@@ -221,33 +182,18 @@ def parse(content: bytes, filename: str):
     elif filename.lower().endswith('.csv'):
         rows = list(csv.DictReader(io.StringIO(text)))
         flat_fields = {'tx_id', 'from_address', 'to_address', 'amount_btc', 'fee_btc', 'input_count', 'output_count'}
+        sih_fields = {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}
         if rows and flat_fields.issubset(rows[0]):
             rows = [_flat_csv_row(row, number) for number, row in enumerate(rows, 1)]
-        elif rows and {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}.issubset(rows[0]):
+        elif rows and sih_fields.issubset(rows[0]):
             observations.extend(filter(None, (_network_observation(row) for row in rows)))
             rows = [_sih_row(row, number) for number, row in enumerate(rows, 1)]
         for row in rows:
             for key in ['inputs', 'outputs']:
-<<<<<<< HEAD
-<<<<<<< HEAD
                 if isinstance(row.get(key), str):
                     row[key] = json.loads(row.get(key) or '[]')
-            for key in ['fee_sats', 'vsize', 'confirmations', 'block_height', 'size_bytes', 'weight', 'version', 'locktime']:
-=======
-                row[key] = json.loads(row.get(key) or '[]')
             for key in ['fee_sats', 'vsize', 'confirmations', 'block_height',
                         'size_bytes', 'weight', 'version', 'locktime']:
->>>>>>> a2af0ae (feat: implement backend database schema, analytical processing pipeline, and frontend dashboard for transaction monitoring and ML anomaly detection)
-=======
-                row[key] = json.loads(row.get(key) or '[]')
-            for key in ['fee_sats', 'vsize', 'confirmations', 'block_height',
-                        'size_bytes', 'weight', 'version', 'locktime']:
-=======
-                if isinstance(row.get(key), str):
-                    row[key] = json.loads(row.get(key) or '[]')
-            for key in ['fee_sats', 'vsize', 'confirmations', 'block_height', 'size_bytes', 'weight', 'version', 'locktime']:
->>>>>>> 8bd8a2169d83afd7ad90d8125606ba357648d268
->>>>>>> 20a0cb789f0b780745cb32d39b36cd06620b3b24
                 row[key] = int(row[key]) if row.get(key) else None
             for key in ['observed_at', 'block_time']:
                 row[key] = row.get(key) or None
@@ -277,7 +223,11 @@ def parse(content: bytes, filename: str):
             for key in ['peer_port', 'src_port', 'dst_port']:
                 if observation.get(key):
                     observation[key] = int(observation[key])
-    if rows and isinstance(rows[0], dict) and {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}.issubset(rows[0]):
+    else:
+        raise ValueError('Use .json, .csv, or .xml files.')
+    if rows and isinstance(rows[0], dict) and {
+        'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'
+    }.issubset(rows[0]):
         observations.extend(filter(None, (_network_observation(row) for row in rows)))
         rows = [_sih_row(row, number) for number, row in enumerate(rows, 1)]
     if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_RECORDS:
@@ -306,7 +256,7 @@ def parse(content: bytes, filename: str):
         tx['source_record'] = n
         result.append(tx)
     try:
-        obs = [Observation.model_validate(enrich_observation(o)).model_dump() for o in observations]
+        obs = [Observation.model_validate(o).model_dump() for o in observations]
     except ValidationError as exc:
         err = exc.errors()[0]
         raise ValueError(f'Observation: {".".join(map(str, err["loc"]))}: {err["msg"]}') from exc
@@ -591,6 +541,9 @@ def analyze(rows: list[dict], observations: list[dict] | None = None, on_stage=N
     """Full 5-stage analysis pipeline. Returns (alerts, features)."""
     from bisect import bisect_left, bisect_right
 
+    if callable(observations) and on_stage is None:
+        on_stage = observations
+        observations = None
     if observations is None:
         observations = []
 
@@ -711,6 +664,8 @@ def analyze(rows: list[dict], observations: list[dict] | None = None, on_stage=N
                 'severity': priority,
                 'priority': priority,
                 'risk_score': risk_score,
+                'confidence_score': risk_score,
+                'confidence_basis': 'Composite investigative lead score; not a probability of criminal activity.',
                 'score': score,
                 'reasons': reasons,
                 'status': 'open',
@@ -737,7 +692,7 @@ def analyze(rows: list[dict], observations: list[dict] | None = None, on_stage=N
         })
 
     stage('alert_generation', 'completed', alerts=len(alerts))
-    return sorted(alerts, key=lambda a: (a['severity'] == 'high', a['score']), reverse=True), features
+    return sorted(alerts, key=lambda a: (a['severity'] == 'high', a['confidence_score']), reverse=True), features
 
 
 # ---------------------------------------------------------------------------

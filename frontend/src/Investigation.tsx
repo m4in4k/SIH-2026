@@ -27,10 +27,12 @@ import {
 export const stageName = (stage?: string) =>
   ({
     validation: "Validation",
+    geoip_enrichment: "GeoIP enrichment",
     feature_engineering: "Feature engineering",
     rule_detection: "Rule detection",
     model_scoring: "Model scoring",
     alert_generation: "Alert generation",
+    entity_clustering: "Entity clustering",
   })[stage || ""] || "Not recorded";
 export const utc = (s?: string | null) =>
   s
@@ -38,6 +40,21 @@ export const utc = (s?: string | null) =>
     : "Not supplied";
 const amount = (n?: number | null) =>
   n == null ? "Unknown" : `${n.toLocaleString("en-US")} sat`;
+type GeoInfo = {
+  country?: string | null;
+  country_code?: string | null;
+  continent_code?: string | null;
+  asn?: string | number | null;
+  as_org?: string | null;
+  source?: string | null;
+};
+const geoText = (geo?: GeoInfo | null) => {
+  if (!geo) return "Enrichment unavailable";
+  const asn = geo.asn == null ? null : String(geo.asn).toUpperCase().startsWith("AS") ? String(geo.asn) : `AS${geo.asn}`;
+  return [geo.country || geo.country_code, asn, geo.as_org]
+    .filter(Boolean)
+    .join(" · ") || "Enrichment unavailable";
+};
 export function StagePill({ stage }: { stage?: string }) {
   return (
     <span className={`stage-pill ${stage || "unknown"}`}>
@@ -121,10 +138,12 @@ export function DetectionEvidence({
       <div className="pipeline-strip">
         {[
           "validation",
+          "geoip_enrichment",
           "feature_engineering",
           "rule_detection",
           "model_scoring",
           "alert_generation",
+          "entity_clustering",
         ].map((stage) => (
           <div
             key={stage}
@@ -715,14 +734,16 @@ type Detail = {
     src_port?: number | null;
     dst_port?: number | null;
     country?: string | null;
-    asn?: string | null;
+    asn?: string | number | null;
     asn_org?: string | null;
     src_country?: string | null;
     dst_country?: string | null;
-    src_asn?: string | null;
-    dst_asn?: string | null;
+    src_asn?: string | number | null;
+    dst_asn?: string | number | null;
     src_asn_org?: string | null;
     dst_asn_org?: string | null;
+    src_geo?: GeoInfo | null;
+    dst_geo?: GeoInfo | null;
     observed_at: string;
   }[];
   spenders_truncated: boolean;
@@ -1047,28 +1068,32 @@ export function TransactionDrawer({
                   A relaying peer is not necessarily the originator or wallet
                   owner.
                 </p>
-                {detail.observations.map((o, i) => (
-                  <div className="reference-card" key={i}>
-                    <strong>
-                      {o.src_ip || o.peer_ip || "Unknown source"}
-                      {o.src_port || o.peer_port ? `:${o.src_port || o.peer_port}` : ""}
-                      {o.dst_ip ? ` → ${o.dst_ip}${o.dst_port ? `:${o.dst_port}` : ""}` : ""}
-                    </strong>
-                    <small>
-                      {o.sensor} · {utc(o.observed_at)}
-                      {o.src_country || o.dst_country || o.country
-                        ? ` · Country: ${o.src_country || o.dst_country || o.country}`
-                        : " · Country unavailable"}
-                      {o.src_asn || o.dst_asn || o.asn
-                        ? ` · ASN: ${o.src_asn || o.dst_asn || o.asn}`
-                        : " · ASN unavailable"}
-                      {(o.src_asn_org || o.dst_asn_org || o.asn_org)
-                        ? ` · ${o.src_asn_org || o.dst_asn_org || o.asn_org}`
-                        : ""}
-                      {o.country || o.asn ? ` · ${o.country || "country unavailable"} · ${o.asn || "ASN unavailable"}` : " · enrichment unavailable"}
-                    </small>
-                  </div>
-                ))}
+                {detail.observations.map((o, i) => {
+                  const sourceGeo = o.src_geo || (o.src_country || o.src_asn || o.country || o.asn ? {
+                    country: o.src_country || o.country,
+                    asn: o.src_asn || o.asn,
+                    as_org: o.src_asn_org || o.asn_org,
+                    source: "dataset",
+                  } : null);
+                  const destinationGeo = o.dst_geo || (o.dst_country || o.dst_asn ? {
+                    country: o.dst_country,
+                    asn: o.dst_asn,
+                    as_org: o.dst_asn_org,
+                    source: "dataset",
+                  } : null);
+                  return (
+                    <div className="reference-card" key={i}>
+                      <strong>
+                        {o.src_ip || o.peer_ip || "Unknown source"}
+                        {o.src_port || o.peer_port ? `:${o.src_port || o.peer_port}` : ""}
+                        {o.dst_ip ? ` → ${o.dst_ip}${o.dst_port ? `:${o.dst_port}` : ""}` : ""}
+                      </strong>
+                      <small>{o.sensor} · {utc(o.observed_at)}</small>
+                      <small>Source GeoIP: {geoText(sourceGeo)}</small>
+                      {o.dst_ip && <small>Destination GeoIP: {geoText(destinationGeo)}</small>}
+                    </div>
+                  );
+                })}
               </>
             )}
             <button
@@ -1294,10 +1319,12 @@ export function Timeline({
             <option value="all">All stages</option>
             {[
               "validation",
+              "geoip_enrichment",
               "feature_engineering",
               "rule_detection",
               "model_scoring",
               "alert_generation",
+              "entity_clustering",
             ].map((s) => (
               <option key={s} value={s}>
                 {stageName(s)}

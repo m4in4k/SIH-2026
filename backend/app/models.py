@@ -103,12 +103,13 @@ class Observation(BaseModel):
     src_port: int | None = Field(default=None, ge=1, le=65535)
     dst_port: int | None = Field(default=None, ge=1, le=65535)
     country: str | None = Field(default=None, min_length=2, max_length=100)
-    asn: str | None = Field(default=None, max_length=80)
+    geo_country: str | None = Field(default=None, min_length=2, max_length=100)
+    asn: str | int | None = None
     asn_org: str | None = Field(default=None, max_length=200)
     src_country: str | None = Field(default=None, min_length=2, max_length=100)
     dst_country: str | None = Field(default=None, min_length=2, max_length=100)
-    src_asn: str | None = Field(default=None, max_length=80)
-    dst_asn: str | None = Field(default=None, max_length=80)
+    src_asn: str | int | None = None
+    dst_asn: str | int | None = None
     src_asn_org: str | None = Field(default=None, max_length=200)
     dst_asn_org: str | None = Field(default=None, max_length=200)
     sensor: str = Field(min_length=1, max_length=100)
@@ -120,12 +121,28 @@ class Observation(BaseModel):
         import ipaddress
         return str(ipaddress.ip_address(value))
 
+    @field_validator('asn', 'src_asn', 'dst_asn')
+    @classmethod
+    def valid_asn(cls, value):
+        if value is None:
+            return value
+        if isinstance(value, int):
+            if not 0 <= value <= 4294967295:
+                raise ValueError('ASN must fit the 32-bit autonomous-system number range.')
+            return value
+        value = value.strip()
+        if not value or len(value) > 80:
+            raise ValueError('ASN text must contain between 1 and 80 characters.')
+        return value
+
     @model_validator(mode='after')
     def normalize_network_fields(self):
         if self.src_ip is None and self.peer_ip is not None:
             self.src_ip = self.peer_ip
         if self.src_port is None and self.peer_port is not None:
             self.src_port = self.peer_port
+        if self.country is None and self.geo_country is not None:
+            self.country = self.geo_country
         if self.src_ip is None and self.dst_ip is None:
             raise ValueError('Provide peer_ip, src_ip, or dst_ip for a network observation.')
         return self

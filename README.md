@@ -2,6 +2,8 @@
 
 An AI-powered Sentinel Tool platform for offline or private-network Bitcoin investigation, built with **React + FastAPI + MongoDB**. Includes case permissions, dataset ingestion, exploratory anomaly detection, interactive transaction graphs, and JSON evidence reports.
 
+Submission documentation: [technical approach, model, and explainability](TECHNICAL_WRITEUP.md) and [offline Linux workflow](OFFLINE.md).
+
 ## Investigation enhancements
 
 - **Transactions → Advanced filters:** combine a dataset, explicit observation/block time range (UTC), output total in satoshis, fee rate, input/output counts, confirmation snapshot, script type, and alert presence. Sort and paginate the filtered results. Missing values do not match numeric or date ranges.
@@ -12,7 +14,7 @@ An AI-powered Sentinel Tool platform for offline or private-network Bitcoin inve
 
 Model version `sentinel-iforest-v2` records validation, feature engineering, rule detection, model scoring (or skipped for small datasets), and alert generation. Transaction observation time, detection time, and alert creation time are separate fields. Old records remain unchanged: unknown historical stages/times are explicitly labeled, never backfilled with invented events. Import into a new case to obtain a fresh recorded analysis without erasing review history.
 
-Reports use schema version 1.1 and include the stored detection evidence and dataset stage events. The timeline reads at most 20,000 records per source and displays a source-cap warning when reached; its total then describes the bounded view. Live chain verification and calibrated real-world crime detection remain outside scope.
+Reports use schema version 1.2 and include stored detection evidence, feature contributions, entity clusters, network observations, and dataset stage events. The timeline reads at most 20,000 records per source and displays a source-cap warning when reached; its total then describes the bounded view. Live chain verification and calibrated real-world crime detection remain outside scope.
 
 ## What works
 
@@ -20,8 +22,8 @@ Reports use schema version 1.1 and include the stored detection evidence and dat
 - A clearly labeled, read-only synthetic demo available without credentials. Demo review changes exist only in browser memory; demo scores are illustrative.
 - Self-service analyst signup plus administrator-provisioned viewer accounts; Argon2 password hashes; signup and login throttling; opaque expiring, server-revocable HttpOnly session cookies. No hardcoded passwords or public administrator-bootstrap endpoint.
 - Case owners, analysts, and viewers. Backend authorization on every case operation. Workspace administrators can access all cases and create accounts. Ordinary analysts see only cases they own or are assigned to. Viewers cannot import, create cases, or review alerts.
-- CSV, JSON, XML uploads, SHA-256 source hashes, record lineage, input/output schema validation, and duplicate detection. Optional network observations in JSON.
-- Mongo-backed queued analysis with a separate worker for Docker/local use, request-scoped analysis for Vercel, visible processing stages, rule-based fan-out/fan-in signals, and deterministic Isolation Forest scoring for datasets of at least 40 records.
+- CSV, JSON, XML uploads, SHA-256 source hashes, record lineage, input/output schema validation, and duplicate detection. Optional network observations are correlated to transactions and enriched from local country/ASN MMDB databases when configured.
+- Mongo-backed queued analysis with a separate worker for Docker/local use, request-scoped analysis for Vercel, visible processing stages, multi-pattern rules, deterministic Isolation Forest scoring for datasets of at least 40 records, feature-contribution explanations, and wallet/IP entity clustering.
 - Evidence export containing dataset metadata, alerts, source transactions, feature vectors, model parameters, and audit history.
 
 This is a prototype, not a validated forensic product. No blockchain consensus verification, wallet ownership inference, or calibrated crime prediction is performed.
@@ -159,19 +161,32 @@ JSON accepts a list of transactions or an object with `transactions` and optiona
 - Optional transaction metadata: `confirmed` (boolean), `confirmations`, `block_height`, `block_hash`, `size_bytes`, `weight`, `version`, and `locktime`. Outputs may include `script_type` and `script_hex`; inputs may include `sequence`. CSV/XML parsers normalize scalar values before validation.
 - A timestamp must carry a timezone; store observation and block times separately. Charts explicitly combine available observation/block timestamps and omit records lacking both. They are not precise creation-time charts.
 - CSV uses the same top-level fields with JSON-encoded `inputs` and `outputs` cells. XML examples use output and input attributes; XML entity expansion is disabled.
-- An optional network observation has `txid`, `observed_at`, `sensor`, and either legacy `peer_ip`/`peer_port` or SIH-style `src_ip`, `dst_ip`, `src_port`, and `dst_port`. Optional `country` and `asn` values are accepted when supplied by an offline source. These are correlated only to the referenced transaction, preserved in reports, and never treated as evidence of origin or ownership. The graph labels IP, transaction, and wallet/address nodes separately; unmatched network records remain unmatched.
+- An optional network observation has `txid`, `observed_at`, `sensor`, and either legacy `peer_ip`/`peer_port` or SIH-style `src_ip`, `dst_ip`, `src_port`, and `dst_port`. Optional `country` (or `geo_country`) and `asn` values are accepted when supplied by an offline source. When local MMDB files are configured, Sentinel records separate `src_geo` and `dst_geo` evidence containing country code/name, continent, ASN, organization, and provenance. These observations are correlated only to the referenced transaction, preserved in reports, and never treated as evidence of origin or ownership. The graph labels IP, country, ASN, transaction, and wallet/address nodes separately; unmatched network records remain unmatched.
 - SIH rows may also use `timestamp`, `txid`, `input_addresses`, `output_addresses`, `input_amounts`, `output_amounts`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `geo_country`, and `ASN`. Amount arrays are interpreted as BTC and converted to integer satoshis before normal `Transaction` validation. Address-only inputs are retained as unresolved references; no wallet ownership is inferred.
 - Limits: 4 MB/file on Vercel (to stay below its 4.5 MB function body limit), 10 MB/file when self-hosted, 10,000 transaction records/file, 500 inputs or outputs/record, and 100,000 records/case for summary scans. These are explicit prototype bounds, not Bitcoin protocol limits.
 
 ## Analysis behavior and limits
 
-Rules flag at least 10 inputs or outputs. Isolation Forest uses input/output counts, log output value, largest-output share, log fee rate, and a missing-fee indicator. Parameters: 100 estimators, random seed 42, one training thread.
+Rules detect fan-in/fan-out, peel chains, structuring, round outputs, off-hours large transfers, cross-border relays, and Tor/VPN relay evidence. Isolation Forest uses 14 blockchain and network features: input/output counts, value and fee measures, output entropy and roundness, time, transaction size, unique relay IP count, cross-border activity, and Tor/VPN evidence. Parameters: 200 estimators, random seed 42, one training thread.
 
 For at least 40 accepted records, scores are mid-rank percentiles **within the imported dataset**. This is exploratory, in-sample scoring. A 97th-percentile score can create a medium-priority model alert; rule matches create high-priority review leads. Identical feature vectors share a score. Fewer than 40 records use rules only; the UI shows no ML score. Scores from separately imported datasets are not calibrated for direct comparison.
 
-Explanations list actual feature values and triggered rules; they do not claim exact model feature attribution. Legitimate batching and consolidation can trigger the same rules. There is no validated precision/recall claim.
+Explanations list actual feature values, triggered thresholds, and per-feature perturbation contributions relative to dataset medians. These contributions are local, SHAP-style approximations rather than exact SHAP values or causal attribution. Legitimate batching and consolidation can trigger the same rules. There is no validated precision/recall claim.
 
-Reports include up to 1,000 alerts and 200 recent audit entries, with explicit limits. Graphs show at most 25 transactions within two hops and selected outputs, retaining connecting outputs where possible. Truncation is labeled. Place `GeoLite2-Country.mmdb` and `GeoLite2-ASN.mmdb` in `geoip/`, or set `SENTINEL_GEOIP_COUNTRY_DB` and `SENTINEL_GEOIP_ASN_DB` to absolute paths. GeoIP2 reads both files locally; missing files, private IPs, invalid IPs, and unknown addresses are recorded as unavailable and never block analysis. Identity clustering and live collection are not implemented.
+Reports include up to 1,000 alerts and 200 recent audit entries, with explicit limits. Graphs show at most 25 transactions within two hops and selected outputs, retaining connecting outputs where possible. Wallet clusters use common-input co-occurrence evidence; IP clusters use relay co-occurrence and are displayed with risk scores and supporting transactions. These are investigative groupings, not proven common ownership. Missing GeoIP enrichment is recorded as a skipped pipeline stage and never blocks core transaction analysis. Live collection is not implemented.
+
+## Offline GeoIP enrichment
+
+Sentinel performs GeoIP lookup locally; it never sends IP addresses to a web service. Obtain compatible country and ASN databases in MaxMind DB (`.mmdb`) format under terms suitable for your deployment, then place them at:
+
+```text
+geoip/country.mmdb
+geoip/asn.mmdb
+```
+
+The recognized default names are also `geoip/GeoLite2-Country.mmdb` and `geoip/GeoLite2-ASN.mmdb`. The offline Compose configuration mounts the directory read-only. Native deployments may set `GEOIP_COUNTRY_DB` and `GEOIP_ASN_DB` (or the older `SENTINEL_GEOIP_*` names) to absolute local paths. Each import records a `geoip_enrichment` stage with database filenames and match counts. `/api/health` reports whether each configured file is present. Source and destination lookups are stored independently, exposed in transaction detail and timeline responses, included in evidence exports, and represented as IP, country, and ASN nodes in the graph.
+
+Supplied `country`/`geo_country` and `asn` fields remain usable as dataset-sourced fallback evidence. GeoIP location identifies an address allocation record, not a person, device, transaction origin, or wallet owner.
 
 Use one worker for the Docker/local prototype. Queued jobs survive restarts. Vercel processes imports within the request and does not start this worker. Running jobs older than an hour without progress become visible failures; failed payloads are retained for administrator inspection. Automatic retry/reprocessing is not implemented. A fresh case can be used to retry a corrected or unchanged source file. Source import is schema validation, not a guarantee of chain validity, input-value conservation, authenticity, or absence of double spending.
 

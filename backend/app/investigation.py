@@ -126,7 +126,7 @@ class TimelineFilters(BaseModel):
     q:str=Field(default='',max_length=200)
     dataset_id:str=Field(default='',max_length=100)
     event_type:Literal['all','observation','block','network','pipeline','detection','audit']='all'
-    stage:Literal['all','validation','feature_engineering','rule_detection','model_scoring','alert_generation']='all'
+    stage:Literal['all','validation','geoip_enrichment','feature_engineering','rule_detection','model_scoring','alert_generation','entity_clustering']='all'
     date_from:datetime|None=None
     date_to:datetime|None=None
     offset:int=Field(default=0,ge=0,le=1000000000)
@@ -162,7 +162,11 @@ def timeline(case_id:str,f:Annotated[TimelineFilters,Query()],user=Depends(curre
                 add({'id':f'{t["_id"]}:{kind}','type':kind,'title':title,'at':t.get(field),'txid':t['txid'],'dataset_id':t['dataset_id'],'detail':{'source_record':t.get('source_record'),'time_basis':field}})
     if f.event_type in {'all','network'}:
         for o in bounded(db.observations.find(base).sort('observed_at',-1)):
-            add({'id':o['_id'],'type':'network','title':'Network observation — origin unknown','at':o['observed_at'],'txid':o['txid'],'dataset_id':o['dataset_id'],'detail':{'sensor':o['sensor'],'peer_ip':o.get('peer_ip'),'peer_port':o.get('peer_port'),'src_ip':o.get('src_ip'),'dst_ip':o.get('dst_ip'),'src_port':o.get('src_port'),'dst_port':o.get('dst_port'),'country':o.get('country'),'asn':o.get('asn'),'asn_org':o.get('asn_org')}})
+            add({'id':o['_id'],'type':'network','title':'Network observation — origin unknown','at':o['observed_at'],'txid':o['txid'],'dataset_id':o['dataset_id'],
+                 'detail':{'sensor':o['sensor'],'peer_ip':o.get('peer_ip'),'peer_port':o.get('peer_port'),
+                           'src_ip':o.get('src_ip'),'src_port':o.get('src_port'),'src_geo':o.get('src_geo'),
+                           'dst_ip':o.get('dst_ip'),'dst_port':o.get('dst_port'),'dst_geo':o.get('dst_geo'),
+                           'country':o.get('country'),'asn':o.get('asn'),'asn_org':o.get('asn_org')}})
     if f.event_type in {'all','pipeline'}:
         for d in bounded(db.datasets.find({'case_id':case_id}).sort('created_at',-1)):
             add({'id':d['_id']+':queued','type':'pipeline','title':'Dataset queued','at':d['created_at'],'dataset_id':d['_id'],'detail':{'filename':d['name']}})

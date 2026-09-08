@@ -1,5 +1,12 @@
 # Sentinel Tool validation
 
+## Offline GeoIP enrichment update
+
+- Backend regression suite: all 24 tests passed with the isolated MongoDB mock, including SIH CSV conversion, Country/ASN enrichment, dataset fallback, graph nodes and edges, investigation timeline evidence, and report propagation.
+- Real MMDB compatibility check: passed with the repository's Country and ASN databases through the installed MaxMind DB reader, including distinct source/destination results.
+- React production build: passed with TypeScript and Vite (1,589 modules transformed).
+- GeoIP processing remains fully offline at runtime. Operators supply locally licensed/downloaded MMDB files; no lookup API is called and no network observation leaves the machine.
+
 ## Vercel readiness update
 
 - Vercel Services configuration matches the current service schema: Vite and FastAPI build from separate roots, API rewrites precede the frontend catch-all, and the backend entry point is app.main:app.
@@ -22,7 +29,7 @@
 
 - React production build: passed (TypeScript + Vite).
 - Fifteen backend regression tests: passed against real MongoDB Community 8.0.28. Each test used an isolated database, removed afterward.
-- Live HTTP integration through the React development proxy: passed for sign-in, combined transaction filters, confirmation/script metadata, resolved input evidence, stage-filtered alerts, processing timeline, schema 1.1 evidence export, oversized numeric-filter rejection, and logout.
+- Live HTTP integration through the React development proxy: passed for sign-in, combined transaction filters, confirmation/script metadata, resolved input evidence, stage-filtered alerts, processing timeline, evidence export, oversized numeric-filter rejection, and logout.
 - Existing cases and review history were preserved. A separate synthetic case, `Detection trace · training`, was added to demonstrate the new recorded stages.
 
 Coverage includes the original import → analysis → graph → review → report workflow, case isolation, viewer restrictions, session expiry, CSRF checks, login throttling, duplicate lineage, XML entity rejection, uniform-data scoring, combined filters, pagination, unknown values, timezone validation, rich transaction details, rule/model threshold evidence, dual detections, stage ordering, actual detection timestamps, skipped model stages, failed validation events, and legacy records without fabricated history.

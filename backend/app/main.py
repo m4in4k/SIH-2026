@@ -16,6 +16,7 @@ from .db import database, indexes, now, public
 from .security import passwords, DUMMY_HASH, current_user, digest, access, audit, login_limited, signup_limited
 from .models import Credentials, Registration, UserCreate, CaseCreate, MemberAdd, Review
 from .analysis import training_data
+from .geoip import configuration_status as geoip_configuration_status
 
 LOCAL_MAX_UPLOAD=10*1024*1024
 VERCEL_MAX_UPLOAD=4*1024*1024
@@ -125,7 +126,7 @@ async def db_error(request,exc):
 @app.get('/api/health')
 def health():
     database().command('ping')
-    return {'status':'ok','database':'mongodb'}
+    return {'status':'ok','database':'mongodb','geoip':geoip_configuration_status()}
 
 @app.post('/api/auth/login')
 def login(body:Credentials,request:Request,response:Response):
@@ -360,9 +361,29 @@ def graph(case_id:str,txid:str,user=Depends(current_user)):
             ip=observation.get(field)
             if not ip:
                 continue
+            side=field.removesuffix('_ip')
+            geo=observation.get(f'{side}_geo') or {}
+            if side=='src' and not geo and (observation.get('country') or observation.get('asn')):
+                geo={'country':observation.get('country'),'asn':observation.get('asn'),'source':'dataset'}
+            country=geo.get('country') or geo.get('country_code')
+            asn=geo.get('asn')
+            asn_label=str(asn) if str(asn).upper().startswith('AS') else f'AS{asn}' if asn is not None else None
+            qualifiers=[value for value in (geo.get('country_code') or geo.get('country'),asn_label) if value]
             node_id=f'ip:{ip}'
-            graph.add_node(node_id,kind='ip',label=ip,focus=False,country=observation.get('country'),asn=observation.get('asn'))
-            graph.add_edge(node_id,observation['txid'],label='observed')
+            graph.add_node(node_id,kind='ip',label=ip+(' · '+' · '.join(map(str,qualifiers)) if qualifiers else ''),focus=False,
+                           country=country,country_code=geo.get('country_code'),asn=asn,as_org=geo.get('as_org'),geo_source=geo.get('source'))
+            if side=='src':
+                graph.add_edge(node_id,observation['txid'],label='observed source')
+            else:
+                graph.add_edge(observation['txid'],node_id,label='observed destination')
+            if country:
+                country_id=f'country:{geo.get("country_code") or country}'
+                graph.add_node(country_id,kind='country',label=str(country),focus=False)
+                graph.add_edge(node_id,country_id,label='located in')
+            if asn is not None:
+                asn_id=f'asn:{asn}'
+                graph.add_node(asn_id,kind='asn',label=asn_label,organization=geo.get('as_org'),focus=False)
+                graph.add_edge(asn_id,node_id,label='announces')
     return {'nodes':[{'data':{'id':n,**attrs}} for n,attrs in graph.nodes(data=True)],
             'edges':[{'data':{'id':f'{a}>{b}','source':a,'target':b,**attrs}} for a,b,attrs in graph.edges(data=True)],
             'truncated':truncated,'network_observations':[public(o) for o in db.observations.find({**query,'txid':txid}).limit(50)],

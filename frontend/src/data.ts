@@ -52,6 +52,8 @@ export type Alert = {
   severity: string;
   priority?: string;
   risk_score?: number;
+  confidence_score?: number;
+  confidence_basis?: string;
   score: number;
   reasons: string[];
   alternative: string;
@@ -81,6 +83,16 @@ export type Dataset = {
   stage_events?: StageEvent[];
   current_stage?: string;
   synthetic?: boolean;
+  geoip?: {
+    mode?: string;
+    observations?: number;
+    unique_ips?: number;
+    matched_ips?: number;
+    country_matches?: number;
+    asn_matches?: number;
+    databases?: { country?: string | null; asn?: string | null };
+    errors?: string[];
+  };
 };
 export type Case = {
   id: string;
@@ -233,17 +245,24 @@ export const demoDataset: Dataset = {
   warnings: ["Synthetic data. Not live Bitcoin activity."],
   synthetic: true,
   stage_events: [
-    "validation",
-    "feature_engineering",
-    "rule_detection",
-    "model_scoring",
-    "alert_generation",
-  ].map((stage, i) => ({
+    { stage: "validation", status: "completed", second: 1 },
+    { stage: "geoip_enrichment", status: "skipped", second: 2 },
+    { stage: "feature_engineering", status: "completed", second: 3 },
+    { stage: "rule_detection", status: "completed", second: 4 },
+    { stage: "model_scoring", status: "completed", second: 5 },
+    { stage: "alert_generation", status: "completed", second: 6 },
+    { stage: "entity_clustering", status: "completed", second: 7 },
+  ].map(({ stage, status, second }, i) => ({
     id: `demo-stage-${i}`,
     stage,
-    status: "completed",
-    at: new Date(Date.UTC(2026, 8, 1, 0, 0, [1, 2, 3, 5, 6][i])).toISOString(),
-    detail: { note: "Illustrative synthetic stage event" },
+    status,
+    at: new Date(Date.UTC(2026, 8, 1, 0, 0, second)).toISOString(),
+    detail: {
+      note:
+        stage === "geoip_enrichment"
+          ? "No network observations supplied in this synthetic demo"
+          : "Illustrative synthetic stage event",
+    },
   })),
 };
 export function demoSummary(): Summary {

@@ -7,7 +7,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from .db import database, indexes, now
 from .analysis import parse, analyze, MODEL_VERSION
-from .geoip import enrich_observations
+from .geoip import GeoIPEnricher
 from .clustering import cluster_wallets, cluster_ips
 
 logger = logging.getLogger(__name__)
@@ -29,49 +29,35 @@ def process(dataset_id):
         )
 
     try:
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
         record_stage('validation', 'started', {}, now())
         payload = db.uploads.find_one({'_id': dataset_id})
-        rows, observations, warnings = parse(bytes(payload['content']), d['name'])
-        record_stage('validation', 'completed', {'valid_records': len(rows), 'warnings': len(warnings)}, now())
-        db.datasets.update_one({'_id': dataset_id}, {'$set': {'progress': 20, 'heartbeat': now()}})
-
-        # Retry cleanup: remove only records from this dataset
-        for collection in ['transactions', 'alerts', 'features', 'observations', 'clusters']:
-=======
->>>>>>> 20a0cb789f0b780745cb32d39b36cd06620b3b24
-        record_stage('validation','started',{},now())
-        payload=db.uploads.find_one({'_id':dataset_id})
         if not payload:
             raise ValueError('Uploaded dataset payload is missing; the dataset cannot be processed.')
-        rows,observations,warnings=parse(bytes(payload['content']),d['name'])
-        record_stage('validation','completed',{'valid_records':len(rows),'warnings':len(warnings)},now())
-        db.datasets.update_one({'_id':dataset_id},{'$set':{'progress':25,'heartbeat':now()}})
-        # Retry cleanup applies only to records belonging to this dataset.
-        for collection in ['transactions','alerts','features','observations']:
-<<<<<<< HEAD
-=======
-        record_stage('validation', 'started', {}, now())
-        payload = db.uploads.find_one({'_id': dataset_id})
         rows, observations, warnings = parse(bytes(payload['content']), d['name'])
         record_stage('validation', 'completed', {'valid_records': len(rows), 'warnings': len(warnings)}, now())
         db.datasets.update_one({'_id': dataset_id}, {'$set': {'progress': 20, 'heartbeat': now()}})
 
         # Retry cleanup: remove only records from this dataset
         for collection in ['transactions', 'alerts', 'features', 'observations', 'clusters']:
->>>>>>> a2af0ae (feat: implement backend database schema, analytical processing pipeline, and frontend dashboard for transaction monitoring and ML anomaly detection)
-=======
->>>>>>> 8bd8a2169d83afd7ad90d8125606ba357648d268
->>>>>>> 20a0cb789f0b780745cb32d39b36cd06620b3b24
             db[collection].delete_many(scope)
 
         # --- GeoIP enrichment ---
-        record_stage('geoip_enrichment', 'started', {'observation_count': len(observations)}, now())
-        enriched_obs = enrich_observations(observations)
-        record_stage('geoip_enrichment', 'completed',
-                     {'enriched': sum(1 for o in enriched_obs if o.get('country') != 'Unknown')}, now())
+        record_stage('geoip_enrichment', 'started', {'observations': len(observations)}, now())
+        with GeoIPEnricher.from_environment() as enricher:
+            enriched_obs, geoip_summary = enricher.enrich(observations)
+        if not observations:
+            record_stage('geoip_enrichment', 'skipped',
+                         {'reason': 'No network observations were supplied.', 'mode': geoip_summary['mode']}, now())
+        elif geoip_summary['mode'] == 'offline_mmdb':
+            record_stage('geoip_enrichment', 'completed', geoip_summary, now())
+        else:
+            record_stage('geoip_enrichment', 'skipped',
+                         {'reason': 'No local MMDB database is available; supplied enrichment was preserved.',
+                          **geoip_summary}, now())
+            if not any(o.get('src_geo') or o.get('dst_geo') for o in enriched_obs):
+                warnings.append('Network observations were retained, but no local GeoIP MMDB database or supplied enrichment was available.')
+        warnings.extend(geoip_summary['errors'])
+        db.datasets.update_one({'_id': dataset_id}, {'$set': {'geoip': geoip_summary}})
         db.datasets.update_one({'_id': dataset_id}, {'$set': {'progress': 35, 'heartbeat': now()}})
 
         # --- Insert transactions ---
