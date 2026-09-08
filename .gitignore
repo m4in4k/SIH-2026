@@ -14,5 +14,7 @@ geoip/*.mmdb
 *.tsbuildinfo
 *.log
 .vercel/
+*.mmdb
+geoip/*.mmdb
 
 tmp/

@@ -14,15 +14,18 @@ import json
 import math
 import statistics
 from datetime import datetime, timezone, timedelta
+from decimal import Decimal, InvalidOperation
 from hashlib import sha256
 from defusedxml import ElementTree
 from pydantic import ValidationError
 from sklearn.ensemble import IsolationForest
 from .models import Transaction, Observation
+from .geoip import enrich_observation
 
 MODEL_VERSION = 'sentinel-iforest-shap-v3'
 MAX_RECORDS = 10000
 
+<<<<<<< HEAD
 FEATURE_NAMES = [
     'input_count',
     'output_count',
@@ -61,6 +64,105 @@ FEATURE_DESCRIPTIONS = {
 # ---------------------------------------------------------------------------
 # Parsing
 # ---------------------------------------------------------------------------
+=======
+def _btc_to_sats(value, field, record):
+    try:
+        sats = Decimal(str(value)) * Decimal(100_000_000)
+    except (InvalidOperation, TypeError):
+        raise ValueError(f'Record {record}: {field} must be a numeric BTC amount.')
+    if not sats.is_finite() or sats != sats.to_integral_value() or sats < 0:
+        raise ValueError(f'Record {record}: {field} must be a non-negative whole satoshi amount.')
+    return int(sats)
+
+def _flat_csv_row(row, record):
+    """Convert the simple classroom CSV shape into the strict UTXO shape."""
+    required = {'tx_id', 'from_address', 'to_address', 'amount_btc', 'fee_btc', 'input_count', 'output_count'}
+    missing = sorted(required - set(row))
+    if missing:
+        raise ValueError(f'Record {record}: missing flat CSV fields: {", ".join(missing)}.')
+    try:
+        input_count = int(row['input_count'])
+        output_count = int(row['output_count'])
+    except (TypeError, ValueError):
+        raise ValueError(f'Record {record}: input_count and output_count must be integers.')
+    if input_count < 0 or output_count < 1:
+        raise ValueError(f'Record {record}: input_count must be non-negative and output_count must be positive.')
+    txid = row['tx_id'].strip().lower()
+    # Keep Transaction's hexadecimal validation as the final authority.
+    outputs = []
+    total_sats = _btc_to_sats(row['amount_btc'], 'amount_btc', record)
+    base, remainder = divmod(total_sats, output_count)
+    for index in range(output_count):
+        outputs.append({
+            'index': index,
+            'value_sats': base + (1 if index < remainder else 0),
+            'address': row['to_address'].strip() or None,
+        })
+    inputs = [
+        {'prev_txid': sha256(f'{txid}:flat-input:{index}'.encode()).hexdigest(), 'prev_vout': 0}
+        for index in range(input_count)
+    ]
+    normalized = {
+        'txid': txid,
+        'observed_at': row.get('timestamp') or row.get('observed_at') or None,
+        'inputs': inputs,
+        'outputs': outputs,
+        'fee_sats': _btc_to_sats(row['fee_btc'], 'fee_btc', record),
+        'vsize': 1,
+    }
+    if row.get('from_address'):
+        normalized['from_address'] = row['from_address'].strip()
+    return normalized
+
+def _sih_row(row, record):
+    """Convert SIH network/blockchain rows into the existing strict UTXO shape."""
+    required = {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}
+    if not required.issubset(row):
+        return None
+    def values(field):
+        value = row.get(field) or []
+        if isinstance(value, str):
+            value = json.loads(value)
+        if not isinstance(value, list):
+            raise ValueError(f'Record {record}: {field} must be an array.')
+        return value
+    input_addresses = values('input_addresses')
+    output_addresses = values('output_addresses')
+    output_amounts = values('output_amounts')
+    if len(output_addresses) != len(output_amounts) or not output_addresses:
+        raise ValueError(f'Record {record}: output_addresses and output_amounts must have the same non-zero length.')
+    if len(input_addresses) != len(values('input_amounts')):
+        raise ValueError(f'Record {record}: input_addresses and input_amounts must have the same length.')
+    txid = str(row['txid']).strip().lower()
+    inputs = [{'prev_txid': sha256(f'{txid}:input:{address}:{index}'.encode()).hexdigest(), 'prev_vout': 0}
+              for index, address in enumerate(input_addresses)]
+    outputs = [{'index': index, 'value_sats': _btc_to_sats(amount, 'output_amounts', record),
+                'address': str(address).strip() or None}
+               for index, (address, amount) in enumerate(zip(output_addresses, output_amounts))]
+    normalized = {'txid': txid, 'observed_at': row.get('timestamp') or row.get('observed_at'),
+                  'inputs': inputs, 'outputs': outputs, 'fee_sats': None, 'vsize': 1}
+    if row.get('fee_btc') not in (None, ''):
+        normalized['fee_sats'] = _btc_to_sats(row['fee_btc'], 'fee_btc', record)
+    return normalized
+
+def _network_observation(row):
+    if not row.get('txid') or not (row.get('src_ip') or row.get('dst_ip')):
+        return None
+    observation = {key: row[key] for key in (
+        'txid', 'src_ip', 'dst_ip', 'src_port', 'dst_port', 'country', 'geo_country',
+        'asn', 'ASN', 'asn_org', 'timestamp', 'observed_at'
+    ) if row.get(key) not in (None, '')}
+    if 'geo_country' in observation and 'country' not in observation:
+        observation['country'] = observation.pop('geo_country')
+    if 'ASN' in observation and 'asn' not in observation:
+        observation['asn'] = observation.pop('ASN')
+    observation['observed_at'] = observation.get('observed_at') or observation.get('timestamp')
+    observation['sensor'] = row.get('sensor') or 'dataset-import'
+    for key in ('src_port', 'dst_port'):
+        if key in observation:
+            observation[key] = int(observation[key])
+    return enrich_observation(observation)
+>>>>>>> 8bd8a2169d83afd7ad90d8125606ba357648d268
 
 def parse(content: bytes, filename: str):
     text = content.decode('utf-8-sig')
@@ -72,11 +174,23 @@ def parse(content: bytes, filename: str):
             observations = raw.get('observations', [])
     elif filename.lower().endswith('.csv'):
         rows = list(csv.DictReader(io.StringIO(text)))
+        flat_fields = {'tx_id', 'from_address', 'to_address', 'amount_btc', 'fee_btc', 'input_count', 'output_count'}
+        if rows and flat_fields.issubset(rows[0]):
+            rows = [_flat_csv_row(row, number) for number, row in enumerate(rows, 1)]
+        elif rows and {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}.issubset(rows[0]):
+            observations.extend(filter(None, (_network_observation(row) for row in rows)))
+            rows = [_sih_row(row, number) for number, row in enumerate(rows, 1)]
         for row in rows:
             for key in ['inputs', 'outputs']:
+<<<<<<< HEAD
                 row[key] = json.loads(row.get(key) or '[]')
             for key in ['fee_sats', 'vsize', 'confirmations', 'block_height',
                         'size_bytes', 'weight', 'version', 'locktime']:
+=======
+                if isinstance(row.get(key), str):
+                    row[key] = json.loads(row.get(key) or '[]')
+            for key in ['fee_sats', 'vsize', 'confirmations', 'block_height', 'size_bytes', 'weight', 'version', 'locktime']:
+>>>>>>> 8bd8a2169d83afd7ad90d8125606ba357648d268
                 row[key] = int(row[key]) if row.get(key) else None
             for key in ['observed_at', 'block_time']:
                 row[key] = row.get(key) or None
@@ -106,8 +220,9 @@ def parse(content: bytes, filename: str):
             for key in ['peer_port', 'src_port', 'dst_port']:
                 if observation.get(key):
                     observation[key] = int(observation[key])
-    else:
-        raise ValueError('Use .json, .csv, or .xml files.')
+    if rows and isinstance(rows[0], dict) and {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}.issubset(rows[0]):
+        observations.extend(filter(None, (_network_observation(row) for row in rows)))
+        rows = [_sih_row(row, number) for number, row in enumerate(rows, 1)]
     if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_RECORDS:
         raise ValueError(f'Import between 1 and {MAX_RECORDS:,} transactions per file.')
     if not isinstance(observations, list) or len(observations) > MAX_RECORDS:
@@ -134,7 +249,7 @@ def parse(content: bytes, filename: str):
         tx['source_record'] = n
         result.append(tx)
     try:
-        obs = [Observation.model_validate(o).model_dump() for o in observations]
+        obs = [Observation.model_validate(enrich_observation(o)).model_dump() for o in observations]
     except ValidationError as exc:
         err = exc.errors()[0]
         raise ValueError(f'Observation: {".".join(map(str, err["loc"]))}: {err["msg"]}') from exc

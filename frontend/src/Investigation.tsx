@@ -716,6 +716,13 @@ type Detail = {
     dst_port?: number | null;
     country?: string | null;
     asn?: string | null;
+    asn_org?: string | null;
+    src_country?: string | null;
+    dst_country?: string | null;
+    src_asn?: string | null;
+    dst_asn?: string | null;
+    src_asn_org?: string | null;
+    dst_asn_org?: string | null;
     observed_at: string;
   }[];
   spenders_truncated: boolean;
@@ -1049,6 +1056,15 @@ export function TransactionDrawer({
                     </strong>
                     <small>
                       {o.sensor} · {utc(o.observed_at)}
+                      {o.src_country || o.dst_country || o.country
+                        ? ` · Country: ${o.src_country || o.dst_country || o.country}`
+                        : " · Country unavailable"}
+                      {o.src_asn || o.dst_asn || o.asn
+                        ? ` · ASN: ${o.src_asn || o.dst_asn || o.asn}`
+                        : " · ASN unavailable"}
+                      {(o.src_asn_org || o.dst_asn_org || o.asn_org)
+                        ? ` · ${o.src_asn_org || o.dst_asn_org || o.asn_org}`
+                        : ""}
                       {o.country || o.asn ? ` · ${o.country || "country unavailable"} · ${o.asn || "ASN unavailable"}` : " · enrichment unavailable"}
                     </small>
                   </div>
@@ -1388,8 +1404,11 @@ export function Timeline({
               )}
               {e.type === "network" && (
                 <p>
-                  {String(e.detail.peer_ip)}:{String(e.detail.peer_port)} ·
-                  sensor {String(e.detail.sensor)}
+                  {String(e.detail.src_ip || e.detail.peer_ip || "Unknown source")}
+                  {e.detail.src_port || e.detail.peer_port ? `:${String(e.detail.src_port || e.detail.peer_port)}` : ""}
+                  {e.detail.dst_ip ? ` → ${String(e.detail.dst_ip)}${e.detail.dst_port ? `:${String(e.detail.dst_port)}` : ""}` : ""}
+                  {e.detail.country ? ` · country ${String(e.detail.country)}` : ""}
+                  {e.detail.asn ? ` · ${String(e.detail.asn)}` : ""} · sensor {String(e.detail.sensor)}
                 </p>
               )}
               <div className="timeline-links">
