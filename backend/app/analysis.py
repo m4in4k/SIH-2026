@@ -26,6 +26,48 @@ MODEL_VERSION = 'sentinel-iforest-shap-v3'
 MAX_RECORDS = 10000
 
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+FEATURE_NAMES = [
+    'input_count',
+    'output_count',
+    'log_output_total',
+    'largest_output_share',
+    'log_fee_rate',
+    'fee_rate_missing',
+    'output_value_entropy',
+    'round_output_fraction',
+    'is_off_hours',
+    'unique_ip_count',
+    'cross_border_flag',
+    'tor_vpn_ip_flag',
+    'tx_size_bytes',
+    'fee_per_output',
+]
+
+FEATURE_DESCRIPTIONS = {
+    'input_count': 'Number of inputs (high = consolidation/mixing)',
+    'output_count': 'Number of outputs (high = fan-out/mixing)',
+    'log_output_total': 'Log of total output value in satoshis',
+    'largest_output_share': 'Fraction of value in the largest output (1.0 = single recipient)',
+    'log_fee_rate': 'Log of fee rate sat/vbyte (high = urgency; missing = anomalous)',
+    'fee_rate_missing': 'Binary: fee data absent from record',
+    'output_value_entropy': 'Shannon entropy of output values (0=uniform, high=varied)',
+    'round_output_fraction': 'Fraction of outputs with round BTC values (structuring indicator)',
+    'is_off_hours': 'Binary: transaction observed between 00:00–05:00 UTC',
+    'unique_ip_count': 'Number of unique IPs that relayed this TX (network anomaly)',
+    'cross_border_flag': 'Binary: TX relayed from >1 country',
+    'tor_vpn_flag': 'Binary: TX relayed via Tor or known VPN ASN',
+    'tx_size_bytes': 'Transaction size in bytes (proxy for complexity)',
+    'fee_per_output': 'Log of fee per output (normalised complexity cost)',
+}
+
+
+# ---------------------------------------------------------------------------
+# Parsing
+# ---------------------------------------------------------------------------
+=======
+>>>>>>> 20a0cb789f0b780745cb32d39b36cd06620b3b24
 def _btc_to_sats(value, field, record):
     try:
         sats = Decimal(str(value)) * Decimal(100_000_000)
@@ -123,6 +165,7 @@ def _network_observation(row):
         if key in observation:
             observation[key] = int(observation[key])
     return enrich_observation(observation)
+<<<<<<< HEAD
 =======
 FEATURE_NAMES = [
     'input_count',
@@ -163,6 +206,9 @@ FEATURE_DESCRIPTIONS = {
 # Parsing
 # ---------------------------------------------------------------------------
 >>>>>>> a2af0ae (feat: implement backend database schema, analytical processing pipeline, and frontend dashboard for transaction monitoring and ML anomaly detection)
+=======
+>>>>>>> 8bd8a2169d83afd7ad90d8125606ba357648d268
+>>>>>>> 20a0cb789f0b780745cb32d39b36cd06620b3b24
 
 def parse(content: bytes, filename: str):
     text = content.decode('utf-8-sig')
@@ -183,6 +229,7 @@ def parse(content: bytes, filename: str):
         for row in rows:
             for key in ['inputs', 'outputs']:
 <<<<<<< HEAD
+<<<<<<< HEAD
                 if isinstance(row.get(key), str):
                     row[key] = json.loads(row.get(key) or '[]')
             for key in ['fee_sats', 'vsize', 'confirmations', 'block_height', 'size_bytes', 'weight', 'version', 'locktime']:
@@ -191,6 +238,16 @@ def parse(content: bytes, filename: str):
             for key in ['fee_sats', 'vsize', 'confirmations', 'block_height',
                         'size_bytes', 'weight', 'version', 'locktime']:
 >>>>>>> a2af0ae (feat: implement backend database schema, analytical processing pipeline, and frontend dashboard for transaction monitoring and ML anomaly detection)
+=======
+                row[key] = json.loads(row.get(key) or '[]')
+            for key in ['fee_sats', 'vsize', 'confirmations', 'block_height',
+                        'size_bytes', 'weight', 'version', 'locktime']:
+=======
+                if isinstance(row.get(key), str):
+                    row[key] = json.loads(row.get(key) or '[]')
+            for key in ['fee_sats', 'vsize', 'confirmations', 'block_height', 'size_bytes', 'weight', 'version', 'locktime']:
+>>>>>>> 8bd8a2169d83afd7ad90d8125606ba357648d268
+>>>>>>> 20a0cb789f0b780745cb32d39b36cd06620b3b24
                 row[key] = int(row[key]) if row.get(key) else None
             for key in ['observed_at', 'block_time']:
                 row[key] = row.get(key) or None
