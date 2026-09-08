@@ -66,6 +66,7 @@ export type Alert = {
   created_at: string;
   model_version?: string;
   dataset_id?: string;
+  feature_contributions?: FeatureContribution[];
 };
 export type Dataset = {
   id: string;
@@ -97,6 +98,52 @@ export type Summary = {
   chart: { label: string; count: number }[];
   alerts: Alert[];
   datasets: Dataset[];
+};
+export type FeatureContribution = {
+  feature: string;
+  contribution: number;
+  description: string;
+  value: number;
+};
+export type Cluster = {
+  id: string;
+  cluster_id: string;
+  type: 'wallet' | 'ip';
+  size: number;
+  addresses?: string[];
+  ips?: string[];
+  txid_count: number;
+  txids: string[];
+  high_alert_hits?: number;
+  medium_alert_hits?: number;
+  flagged_alert_hits?: number;
+  risk_score: number;
+  risk_level: 'high' | 'medium' | 'low';
+  heuristic: string;
+  countries?: string[];
+  has_tor?: boolean;
+  has_vpn?: boolean;
+};
+export type GeoCountry = {
+  country: string;
+  count: number;
+  tor_count: number;
+  vpn_count: number;
+  asns: string[];
+};
+export type GeoSummary = {
+  countries: GeoCountry[];
+  total_observations: number;
+  tor_observations: number;
+  vpn_observations: number;
+};
+export type MLExplanation = {
+  alert_id: string;
+  txid: string;
+  score: number;
+  model_version: string;
+  feature_contributions: FeatureContribution[];
+  disclaimer: string;
 };
 export const short = (s: string, n = 7) =>
   s.length > n * 2 ? `${s.slice(0, n)}…${s.slice(-n)}` : s;
@@ -308,3 +355,106 @@ export function download(data: unknown, name: string) {
   a.click();
   URL.revokeObjectURL(url);
 }
+
+export const demoClusters: Cluster[] = [
+  {
+    id: "wc-demo-001",
+    cluster_id: "wc-a1b2c3d4e5f6",
+    type: "wallet",
+    size: 8,
+    addresses: [
+      "synthetic-address-20-0","synthetic-address-20-1","synthetic-address-21-0",
+      "synthetic-address-22-0","synthetic-address-60-0","synthetic-address-60-1",
+      "synthetic-address-61-0","synthetic-address-62-0",
+    ],
+    txid_count: 6,
+    txids: [demoTx[20]?.txid, demoTx[60]?.txid, demoTx[100]?.txid].filter(Boolean) as string[],
+    high_alert_hits: 2,
+    medium_alert_hits: 1,
+    risk_score: 78.5,
+    risk_level: "high",
+    heuristic: "common_input_ownership+address_reuse",
+  },
+  {
+    id: "wc-demo-002",
+    cluster_id: "wc-b2c3d4e5f6a1",
+    type: "wallet",
+    size: 4,
+    addresses: [
+      "synthetic-address-100-0","synthetic-address-101-0",
+      "synthetic-address-102-0","synthetic-address-140-0",
+    ],
+    txid_count: 4,
+    txids: [demoTx[100]?.txid, demoTx[140]?.txid].filter(Boolean) as string[],
+    high_alert_hits: 1,
+    medium_alert_hits: 0,
+    risk_score: 42.0,
+    risk_level: "medium",
+    heuristic: "common_input_ownership+address_reuse",
+  },
+  {
+    id: "ic-demo-001",
+    cluster_id: "ic-c3d4e5f6a1b2",
+    type: "ip",
+    size: 3,
+    ips: ["185.220.101.1", "185.220.102.4", "185.220.101.15"],
+    txid_count: 4,
+    txids: [demoTx[20]?.txid, demoTx[60]?.txid].filter(Boolean) as string[],
+    flagged_alert_hits: 2,
+    risk_score: 80.0,
+    risk_level: "high",
+    heuristic: "ip_txid_cooccurrence",
+    countries: ["XX"],
+    has_tor: true,
+    has_vpn: false,
+  },
+  {
+    id: "ic-demo-002",
+    cluster_id: "ic-d4e5f6a1b2c3",
+    type: "ip",
+    size: 2,
+    ips: ["46.148.1.10", "81.19.3.30"],
+    txid_count: 3,
+    txids: [demoTx[100]?.txid].filter(Boolean) as string[],
+    flagged_alert_hits: 1,
+    risk_score: 35.0,
+    risk_level: "medium",
+    heuristic: "ip_txid_cooccurrence",
+    countries: ["RU"],
+    has_tor: false,
+    has_vpn: false,
+  },
+];
+
+export const demoGeoSummary: GeoSummary = {
+  countries: [
+    { country: "RU", count: 18, tor_count: 0, vpn_count: 3, asns: ["AS12389"] },
+    { country: "NL", count: 14, tor_count: 0, vpn_count: 12, asns: ["AS60068", "AS9009"] },
+    { country: "US", count: 22, tor_count: 0, vpn_count: 2, asns: ["AS16509", "AS15169"] },
+    { country: "CN", count: 11, tor_count: 0, vpn_count: 0, asns: ["AS4134", "AS4837"] },
+    { country: "DE", count: 8, tor_count: 0, vpn_count: 0, asns: ["AS3320"] },
+    { country: "XX", count: 6, tor_count: 6, vpn_count: 0, asns: ["AS9009"] },
+  ],
+  total_observations: 79,
+  tor_observations: 6,
+  vpn_observations: 17,
+};
+
+export const demoMLExplain = (alert: Alert): MLExplanation => ({
+  alert_id: alert.id,
+  txid: alert.txid,
+  score: alert.score,
+  model_version: alert.model_version || "illustrative-demo-v1",
+  feature_contributions: [
+    { feature: "output_count", contribution: 0.42, description: "Number of outputs (high = fan-out/mixing)", value: alert.detections?.[0]?.observed ?? 16 },
+    { feature: "output_value_entropy", contribution: 0.21, description: "Shannon entropy of output values", value: 3.84 },
+    { feature: "largest_output_share", contribution: -0.11, description: "Fraction of value in largest output", value: 0.18 },
+    { feature: "log_output_total", contribution: 0.08, description: "Log of total output value in satoshis", value: 12.4 },
+    { feature: "fee_rate_missing", contribution: 0.05, description: "Binary: fee data absent from record", value: 0 },
+    { feature: "round_output_fraction", contribution: 0.04, description: "Fraction of outputs with round BTC values", value: 0.06 },
+    { feature: "input_count", contribution: -0.03, description: "Number of inputs", value: 1 },
+    { feature: "is_off_hours", contribution: 0.02, description: "Binary: observed between 00:00–05:00 UTC", value: 0 },
+  ],
+  disclaimer: "DEMO — illustrative contributions only. Not measured model output.",
+});
+

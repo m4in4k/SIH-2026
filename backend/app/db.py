@@ -34,6 +34,9 @@ def indexes(db):
     db.alerts.create_index([('case_id',1),('detection_stages',1),('detected_at',-1)])
     db.audit.create_index([('case_id', 1), ('created_at', -1)])
     db.observations.create_index([('case_id', 1), ('txid', 1)])
+    db.observations.create_index([('case_id', 1), ('dataset_id', 1), ('country', 1)])
+    db.clusters.create_index([('case_id', 1), ('dataset_id', 1), ('type', 1), ('risk_score', -1)])
+    db.clusters.create_index([('case_id', 1), ('cluster_id', 1)])
 
 def public(doc):
     if not doc:

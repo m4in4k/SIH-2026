@@ -368,6 +368,45 @@ def graph(case_id:str,txid:str,user=Depends(current_user)):
             'truncated':truncated,'network_observations':[public(o) for o in db.observations.find({**query,'txid':txid}).limit(50)],
             'disclaimer':DISCLAIMER}
 
+@app.get('/api/cases/{case_id}/clusters')
+def case_clusters(case_id:str,cluster_type:str=Query('all',regex='^(all|wallet|ip)$'),user=Depends(current_user)):
+    access(case_id,user);query=completed_scope(case_id);db=database()
+    q={**query}
+    if cluster_type!='all':q['type']=cluster_type
+    return [public(c) for c in db.clusters.find(q).sort('risk_score',-1).limit(200)]
+
+@app.get('/api/cases/{case_id}/geo-summary')
+def geo_summary(case_id:str,user=Depends(current_user)):
+    access(case_id,user);db=database();query=completed_scope(case_id)
+    pipeline=[
+        {'$match':query},
+        {'$group':{'_id':'$country','count':{'$sum':1},'tor_count':{'$sum':{'$cond':['$is_tor',1,0]}},
+                   'vpn_count':{'$sum':{'$cond':['$is_vpn',1,0]}},'asns':{'$addToSet':'$asn'}}},
+        {'$sort':{'count':-1}},{'$limit':30}
+    ]
+    result=list(db.observations.aggregate(pipeline))
+    total_obs=db.observations.count_documents(query)
+    tor_total=db.observations.count_documents({**query,'is_tor':True})
+    vpn_total=db.observations.count_documents({**query,'is_vpn':True})
+    return {'countries':[{'country':r['_id'] or 'Unknown','count':r['count'],
+                          'tor_count':r.get('tor_count',0),'vpn_count':r.get('vpn_count',0),
+                          'asns':[a for a in r.get('asns',[]) if a and a!='Unknown'][:5]}
+                         for r in result],
+            'total_observations':total_obs,'tor_observations':tor_total,'vpn_observations':vpn_total}
+
+@app.get('/api/cases/{case_id}/ml-explain/{alert_id}')
+def ml_explain(case_id:str,alert_id:str,user=Depends(current_user)):
+    access(case_id,user);db=database();query=completed_scope(case_id)
+    alert=db.alerts.find_one({**query,'_id':alert_id})
+    if not alert:
+        raise HTTPException(404,'Alert not found.')
+    feature_rec=db.features.find_one({**query,'txid':alert['txid']})
+    contributions=alert.get('feature_contributions') or (feature_rec or {}).get('feature_contributions') or []
+    return {'alert_id':alert_id,'txid':alert['txid'],'score':alert.get('score',0),
+            'model_version':alert.get('model_version','unknown'),
+            'feature_contributions':contributions,
+            'disclaimer':'Feature contributions are approximate leave-one-out perturbation estimates, not exact SHAP values. They are descriptive, not causal.'}
+
 @app.get('/api/cases/{case_id}/report')
 def report(case_id:str,user=Depends(current_user)):
     c,_=access(case_id,user);query=completed_scope(case_id);db=database()
@@ -375,10 +414,12 @@ def report(case_id:str,user=Depends(current_user)):
     signal_records=list(db.alerts.find(query).sort('score',-1).limit(1000))
     ids=list({a['txid'] for a in signal_records})
     evidence=[public(t) for t in db.transactions.find({**query,'txid':{'$in':ids}})]
-    return {'schema_version':'1.1','exported_at':now(),'case':public(c),'disclaimer':DISCLAIMER,
+    cluster_records=list(db.clusters.find(query).sort('risk_score',-1).limit(200))
+    return {'schema_version':'1.2','exported_at':now(),'case':public(c),'disclaimer':DISCLAIMER,
             'datasets':datasets(case_id,user),'alerts':[public(a) for a in signal_records],
             'transactions':evidence,'features':[public(f) for f in db.features.find({**query,'txid':{'$in':ids}})],
             'network_observations':[public(o) for o in db.observations.find({**query,'txid':{'$in':ids}}).limit(1000)],
+            'clusters':[public(c) for c in cluster_records],
             'audit':[public(a) for a in db.audit.find({'case_id':case_id}).sort('created_at',-1).limit(200)],
             'limits':{'max_alerts':1000,'max_audit_entries':200,'max_observations':1000,'alerts_truncated':db.alerts.count_documents(query)>1000}}
 
