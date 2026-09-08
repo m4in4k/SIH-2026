@@ -1,0 +1,76 @@
+name: sentinel-tool
+
+services:
+  mongo:
+    image: mongo:8.0.29
+    pull_policy: never
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: sentinel_admin
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Missing generated root password}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:?Missing generated application password}
+    volumes:
+      - mongo_data:/data/db
+      - ./deploy/mongo-init.js:/docker-entrypoint-initdb.d/10-create-app-user.js:ro
+    networks:
+      - sentinel_internal
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  api:
+    image: ${SENTINEL_IMAGE:-sentinel-tool:0.2.0}
+    pull_policy: never
+    restart: unless-stopped
+    environment: &backend_environment
+      MONGO_URI: mongodb://sentinel_app:${MONGO_APP_PASSWORD}@mongo:27017/bitcoin_sentinel?authSource=bitcoin_sentinel
+      MONGO_DB: bitcoin_sentinel
+      COOKIE_SECURE: "false"
+      ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
+      CANONICAL_APP_ORIGIN: ""
+      SENTINEL_OFFLINE: "true"
+      GEOIP_COUNTRY_DB: /opt/sentinel/geoip/country.mmdb
+      GEOIP_ASN_DB: /opt/sentinel/geoip/asn.mmdb
+    volumes:
+      - ./geoip:/opt/sentinel/geoip:ro
+    ports:
+      - "127.0.0.1:${PORT:-8080}:8000"
+    networks:
+      - sentinel_internal
+    depends_on:
+      mongo:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+
+  worker:
+    image: ${SENTINEL_IMAGE:-sentinel-tool:0.2.0}
+    pull_policy: never
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker"]
+    environment: *backend_environment
+    volumes:
+      - ./geoip:/opt/sentinel/geoip:ro
+    networks:
+      - sentinel_internal
+    depends_on:
+      mongo:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  mongo_data:
+
+networks:
+  sentinel_internal:
+    internal: true
+

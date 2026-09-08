@@ -71,6 +71,8 @@ Docker Compose runs the React production build and FastAPI API in one container,
 
 MongoDB must run on an operating system and kernel supported by the pinned server release. MongoDB currently documents a TCMalloc incompatibility for Linux kernels 6.19 through 7.0.13. Its stable server builds can also reject newer, already-fixed kernels until the corresponding MongoDB startup-check patch is released. If `mongod` reports this guard, deploy on a supported LTS kernel, use MongoDB Atlas, or upgrade to a stable MongoDB patch that explicitly includes `SERVER-125742`; do not bypass the safety check.
 
+For a disconnected workstation and desktop-style launch experience, use `scripts/package-offline.sh`, `compose.offline.yaml`, and the installed **Sentinel Tool** desktop entry instead of rebuilding with this development Compose file. The offline Compose network is internal, image pulls are forbidden, credentials are generated locally on first launch, and only the application port is exposed on loopback. See [OFFLINE.md](OFFLINE.md).
+
 ## 1. Prepare secrets
 
 Copy `.env.example` to `.env`. Generate two different secrets:

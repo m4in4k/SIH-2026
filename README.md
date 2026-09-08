@@ -66,6 +66,18 @@ MongoDB is not published to the host network. The API uses a dedicated `sentinel
 
 Container definitions are supplied but were not built in the development environment; native FastAPI/React and a real MongoDB instance were tested.
 
+## One-click offline Linux release
+
+For the investigator-facing offline workflow, build a transferable release once on a connected Linux build machine:
+
+```bash
+bash ./scripts/package-offline.sh 0.2.0
+```
+
+Move the generated `dist-offline/Sentinel-Tool-0.2.0-linux-x86_64` directory to the offline workstation, verify `SHA256SUMS`, and run `bash ./scripts/install-desktop-launcher.sh` once. Normal use then requires only opening **Sentinel Tool**, signing in, and importing a CSV, JSON, or XML dataset. The launcher starts the bundled database, API, and worker without pulling or building images; analysis runs automatically and the dashboard opens the ranked results when processing finishes.
+
+Accounts, cases, evidence, and results persist locally between launches. When a signed-in user without a case imports a file, Sentinel creates the investigation case automatically. See [OFFLINE.md](OFFLINE.md) for packaging, installation, and operational details.
+
 ## Native development
 
 Use Python 3.14 (tested), Node.js 24 (tested), pnpm, and a local MongoDB 8.x instance. Python 3.12+ may also work but was not verified.

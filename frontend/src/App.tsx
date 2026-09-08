@@ -112,6 +112,7 @@ export default function App() {
     [loading, setLoading] = useState(false),
     [members, setMembers] = useState<any[]>([]);
   const datasetInput = useRef<HTMLInputElement>(null);
+  const pendingDataset = useRef<string | null>(null);
   const activeCase = useRef(current.id);
   activeCase.current = current.id;
   const canWrite = !demo && ["admin", "analyst"].includes(current.member_role);
@@ -166,6 +167,20 @@ export default function App() {
       setAlerts(a);
       setDatasets(d);
       setGraphTx(a[0]?.txid || "");
+      const pending = pendingDataset.current
+        ? d.find((dataset: Dataset) => dataset.id === pendingDataset.current)
+        : undefined;
+      if (pending?.status === "completed") {
+        pendingDataset.current = null;
+        setPage("Alert queue");
+        setNotice(
+          `Analysis complete: ${pending.count.toLocaleString()} records processed and ${a.length.toLocaleString()} alerts ready for review.`,
+        );
+      } else if (pending?.status === "failed") {
+        pendingDataset.current = null;
+        setPage("Datasets");
+        setError(pending.error || "Dataset analysis failed. Review the dataset details.");
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -312,24 +327,42 @@ export default function App() {
     }
   }
   async function upload(file: File) {
-    if (!current.id) return;
     setBusy(true);
     setError("");
     const data = new FormData();
     data.append("file", file);
     try {
-      const result = await api(`/cases/${current.id}/datasets`, {
+      let targetCase = current;
+      if (!targetCase.id) {
+        targetCase = await api("/cases", {
+          method: "POST",
+          body: JSON.stringify({
+            name: `Investigation · ${file.name.replace(/\.[^.]+$/, "").slice(0, 80)}`,
+            description: "Automatically created for the imported dataset.",
+          }),
+        });
+        setCases((existing) => [...existing, targetCase]);
+        setCurrent(targetCase);
+      }
+      const result = await api(`/cases/${targetCase.id}/datasets`, {
         method: "POST",
         body: data,
       });
+      pendingDataset.current = result.id;
+      setDatasets((existing) => [result, ...existing.filter((d) => d.id !== result.id)]);
       setNotice(
         result.status === "completed"
-          ? "Dataset validated and analyzed."
+          ? "Dataset validated and analyzed. Opening your results."
           : result.status === "failed"
             ? "Dataset validation failed. Review its recorded error."
-            : "Dataset queued. Validation and analysis will run in the background.",
+            : "Dataset uploaded. Sentinel is validating and analyzing it automatically.",
       );
-      await refresh();
+      if (result.status === "completed") {
+        pendingDataset.current = null;
+        setPage("Alert queue");
+      } else if (targetCase.id === current.id) {
+        await refresh();
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -340,11 +373,6 @@ export default function App() {
     if (!user) {
       navigate("Datasets");
       openAuth();
-      return;
-    }
-    if (!current.id) {
-      navigate("Datasets");
-      setCreate(true);
       return;
     }
     navigate("Datasets");

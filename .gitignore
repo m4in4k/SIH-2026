@@ -5,6 +5,8 @@
 !.env.example
 **/node_modules/
 **/dist/
+dist-offline/
+geoip/*.mmdb
 **/__pycache__/
 **/.pytest_cache/
 .pytest_cache/
