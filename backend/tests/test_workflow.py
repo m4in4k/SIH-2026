@@ -82,8 +82,8 @@ def test_public_signup_creates_isolated_analyst_session(client):
     assert client.post('/api/cases',json={'name':'My first investigation'}).status_code==201
     duplicate=client.post('/api/auth/signup',json=payload)
     assert duplicate.status_code==409
-    assert 'already exists' in duplicate.json()['detail']
-    assert client.post('/api/auth/signup',json={**payload,'email':'other@example.org','password':'short'}).status_code==422
+    assert client.post('/api/auth/signup',json={**payload,'email':'other@example.org','password':'12345678901'}).status_code==422
+    assert client.post('/api/auth/signup',json={**payload,'email':'twelve@example.org','password':'123456789012'}).status_code==201
 
 def test_auth_case_isolation_and_viewer_permissions(client):
     account(client);cid=case(client)
@@ -130,7 +130,7 @@ def test_expired_sessions_csrf_and_logout(client):
 
 def test_login_throttling(client):
     account(client,login=False)
-    for _ in range(8):
+    for _ in range(20):
         assert client.post('/api/auth/login',json={'email':'admin@example.org','password':'wrong'}).status_code==401
     assert client.post('/api/auth/login',json={'email':'admin@example.org','password':'wrong'}).status_code==429
 

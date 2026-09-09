@@ -29,7 +29,7 @@ In **Project Settings -> Environment Variables**, add these values to Production
 | MONGO_DB | bitcoin_sentinel |
 | BOOTSTRAP_ADMIN_EMAIL | The email address for the first administrator |
 | BOOTSTRAP_ADMIN_NAME | The display name for the first administrator |
-| BOOTSTRAP_ADMIN_PASSWORD | A unique password of at least 12 characters |
+| BOOTSTRAP_ADMIN_PASSWORD | A unique password of at least 4 characters |
 
 Vercel sets VERCEL=1, VERCEL_URL, and VERCEL_PROJECT_PRODUCTION_URL automatically. The backend uses those exact URLs for request-origin validation and automatically uses secure cookies. You do not need to set COOKIE_SECURE or SENTINEL_SERVERLESS.
 

@@ -293,11 +293,24 @@ export async function api(path: string, options: RequestInit = {}) {
         `Service temporarily unavailable (${response.status}). Please retry in a moment.`,
       );
     }
-    throw new Error(
-      typeof data.detail === "string"
-        ? data.detail
-        : "Invalid request. Check the supplied fields.",
-    );
+    if (typeof data.detail === "string") {
+      throw new Error(data.detail);
+    }
+    if (Array.isArray(data.detail)) {
+      const messages = data.detail.map((err: any) => {
+        if (typeof err === "string") return err;
+        const field = Array.isArray(err.loc)
+          ? err.loc.filter((x: any) => x !== "body").join(".")
+          : "";
+        const msg = err.msg || err.detail || JSON.stringify(err);
+        return field ? `${field}: ${msg}` : msg;
+      });
+      throw new Error(messages.join("; ") || "Invalid request. Check the supplied fields.");
+    }
+    if (data.detail && typeof data.detail === "object") {
+      throw new Error(JSON.stringify(data.detail));
+    }
+    throw new Error("Invalid request. Check the supplied fields.");
   }
   return response.status === 204 ? null : response.json();
 }

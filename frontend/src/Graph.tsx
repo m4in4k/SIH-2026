@@ -25,6 +25,11 @@ export default function Graph({
       "(prefers-reduced-motion: reduce)",
     ).matches;
     setError("");
+    if (!txid || (!demo && (!caseId || caseId === "demo"))) {
+      setLoading(false);
+      setTruncated(false);
+      return;
+    }
     setLoading(true);
     Promise.resolve()
       .then(() =>

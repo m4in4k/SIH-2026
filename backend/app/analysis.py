@@ -16,6 +16,35 @@ from .geoip import enrich_observation
 MODEL_VERSION = 'sentinel-iforest-v2'
 MAX_RECORDS = 10000
 
+def _normalize_timestamp(val):
+    if not val:
+        return None
+    if isinstance(val, (int, float)):
+        return datetime.fromtimestamp(val, tz=timezone.utc).isoformat()
+    if isinstance(val, datetime):
+        if val.tzinfo is None:
+            return val.replace(tzinfo=timezone.utc).isoformat()
+        return val.isoformat()
+    if isinstance(val, str):
+        val = val.strip()
+        if not val:
+            return None
+        try:
+            num = float(val)
+            if num > 1e11:
+                num /= 1000.0
+            return datetime.fromtimestamp(num, tz=timezone.utc).isoformat()
+        except ValueError:
+            pass
+        try:
+            dt = datetime.fromisoformat(val.replace('Z', '+00:00'))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            return dt.isoformat()
+        except ValueError:
+            return val
+    return val
+
 def _btc_to_sats(value, field, record):
     try:
         sats = Decimal(str(value)) * Decimal(100_000_000)
@@ -55,7 +84,7 @@ def _flat_csv_row(row, record):
     ]
     normalized = {
         'txid': txid,
-        'observed_at': row.get('timestamp') or row.get('observed_at') or None,
+        'observed_at': _normalize_timestamp(row.get('timestamp') or row.get('observed_at')),
         'inputs': inputs,
         'outputs': outputs,
         'amount_sats': total_sats,
@@ -92,7 +121,7 @@ def _sih_row(row, record):
                 'address': str(address).strip() or None}
                for index, (address, amount) in enumerate(zip(output_addresses, output_amounts))]
     ports = {key: (int(row[key]) if row.get(key) not in (None, '') else None) for key in ('src_port', 'dst_port')}
-    normalized = {'txid': txid, 'observed_at': row.get('timestamp') or row.get('observed_at'),
+    normalized = {'txid': txid, 'observed_at': _normalize_timestamp(row.get('timestamp') or row.get('observed_at')),
                   'inputs': inputs, 'outputs': outputs, 'fee_sats': None, 'vsize': 1,
                   'src_ip': row.get('src_ip'), 'dst_ip': row.get('dst_ip'),
                   **ports,
@@ -119,7 +148,7 @@ def _network_observation(row):
         observation['country'] = observation.pop('geo_country')
     if 'ASN' in observation and 'asn' not in observation:
         observation['asn'] = observation.pop('ASN')
-    observation['observed_at'] = observation.get('observed_at') or observation.get('timestamp')
+    observation['observed_at'] = _normalize_timestamp(observation.get('observed_at') or observation.get('timestamp'))
     observation['sensor'] = row.get('sensor') or 'dataset-import'
     for key in ('src_port', 'dst_port'):
         if key in observation:

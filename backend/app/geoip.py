@@ -95,4 +95,10 @@ def enrich_observation(observation):
         enriched['asn'] = enriched.get('src_asn') or enriched.get('dst_asn')
     if not enriched.get('asn_org'):
         enriched['asn_org'] = enriched.get('src_asn_org') or enriched.get('dst_asn_org')
+    if enriched.get('country') and not enriched.get('src_country'):
+        enriched['src_country'] = enriched['country']
+    if enriched.get('asn') and not enriched.get('src_asn'):
+        enriched['src_asn'] = enriched['asn']
+    if enriched.get('asn_org') and not enriched.get('src_asn_org'):
+        enriched['src_asn_org'] = enriched['asn_org']
     return enriched

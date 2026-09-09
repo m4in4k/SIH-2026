@@ -72,6 +72,12 @@ const nav = [
   { name: "Investigation timeline", icon: Clock },
   { name: "Datasets", icon: Database },
 ] as const;
+const emptyCase: Case = {
+  id: "",
+  name: "No investigation yet",
+  description: "Create an investigation or import a dataset to begin.",
+  member_role: "viewer",
+};
 const date = (s: string) =>
   new Date(s).toLocaleString(undefined, {
     month: "short",
@@ -112,49 +118,51 @@ export default function App() {
     [loading, setLoading] = useState(false),
     [members, setMembers] = useState<any[]>([]);
   const datasetInput = useRef<HTMLInputElement>(null);
+  const [selectedDataset, setSelectedDataset] = useState<File | null>(null);
   const pendingDataset = useRef<string | null>(null);
   const activeCase = useRef(current.id);
   activeCase.current = current.id;
-  const canWrite = !demo && ["admin", "analyst"].includes(current.member_role);
+  const canWrite =
+    !demo &&
+    !!user &&
+    ["admin", "analyst"].includes(user.role) &&
+    (!current.id || ["admin", "analyst"].includes(current.member_role));
   async function loadCases() {
     try {
       const list = await api("/cases");
       if (Array.isArray(list) && list.length > 0) {
         setCases(list);
         setCurrent(list[0]);
+        setGraphTx(list[0].id ? "" : "");
       } else {
-        setCases([demoCase]);
-        setCurrent(demoCase);
+        setCases([]);
+        setCurrent(emptyCase);
+        setGraphTx("");
       }
     } catch {
-      setCases([demoCase]);
-      setCurrent(demoCase);
+      setCases([]);
+      setCurrent(emptyCase);
+      setGraphTx("");
     }
     setDemo(false);
   }
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem("sentinel_current_user");
-      if (saved) {
-        const u = JSON.parse(saved);
-        setUser(u);
-        setDemo(false);
-        setCases([demoCase]);
-        setCurrent(demoCase);
-        return;
-      }
-    } catch {}
     api("/auth/me")
       .then((u) => {
+        localStorage.setItem("sentinel_current_user", JSON.stringify(u));
         setUser(u);
         return loadCases();
       })
-      .catch(() => {});
+      .catch(() => {
+        localStorage.removeItem("sentinel_current_user");
+        setUser(null);
+        setDemo(true);
+      });
   }, []);
   async function refresh() {
     if (demo) return;
     setError("");
-    if (!current.id) {
+    if (!current.id || current.id === "demo") {
       setSummary({
         transactions: 0,
         total_output_sats: 0,
@@ -166,6 +174,7 @@ export default function App() {
       });
       setAlerts([]);
       setDatasets([]);
+      setGraphTx("");
       return;
     }
     setLoading(true);
@@ -197,10 +206,19 @@ export default function App() {
       }
     } catch {
       if (activeCase.current !== requestedCase) return;
-      setSummary(demoSummary());
-      setAlerts(demoAlerts);
-      setDatasets([demoDataset]);
-      setGraphTx(demoAlerts[0]?.txid || "");
+      setError("Unable to load this investigation. Check the local API and retry.");
+      setSummary({
+        transactions: 0,
+        total_output_sats: 0,
+        alerts_count: 0,
+        high_priority: 0,
+        chart: [],
+        alerts: [],
+        datasets: [],
+      });
+      setAlerts([]);
+      setDatasets([]);
+      setGraphTx("");
     } finally {
       setLoading(false);
     }
@@ -283,35 +301,15 @@ export default function App() {
     setBusy(true);
     setError("");
     try {
-      let u: User | null = null;
-      try {
-        u = await api("/auth/login", {
-          method: "POST",
-          body: JSON.stringify({ email, password }),
-        });
-      } catch {
-        const namePart = email.split("@")[0];
-        const displayName = namePart.charAt(0).toUpperCase() + namePart.slice(1);
-        u = {
-          id: "usr-" + Math.random().toString(36).substring(2, 9),
-          name: displayName,
-          email,
-          role: "admin",
-        };
-      }
-      if (u) {
-        localStorage.setItem("sentinel_current_user", JSON.stringify(u));
-        setUser(u);
-        setDemo(false);
-        setCases([demoCase]);
-        setCurrent(demoCase);
-        setSummary(demoSummary());
-        setAlerts(demoAlerts);
-        setDatasets([demoDataset]);
-        setGraphTx(demoAlerts[0]?.txid || "");
-        closeAuth();
-        setNotice(`Welcome back, ${u.name}!`);
-      }
+      const u = await api("/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+      localStorage.setItem("sentinel_current_user", JSON.stringify(u));
+      setUser(u);
+      await loadCases();
+      closeAuth();
+      setNotice(`Welcome back, ${u.name}!`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -325,6 +323,10 @@ export default function App() {
     const email = String(form.get("email") || "").trim();
     const password = String(form.get("password") || "");
     const confirmPassword = String(form.get("confirmPassword") || "");
+    if (password.length < 12) {
+      setError("Password must be at least 12 characters.");
+      return;
+    }
     if (password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
@@ -332,33 +334,15 @@ export default function App() {
     setBusy(true);
     setError("");
     try {
-      let u: User | null = null;
-      try {
-        u = await api("/auth/signup", {
-          method: "POST",
-          body: JSON.stringify({ name, email, password }),
-        });
-      } catch {
-        u = {
-          id: "usr-" + Math.random().toString(36).substring(2, 9),
-          name: name || email.split("@")[0],
-          email,
-          role: "admin",
-        };
-      }
-      if (u) {
-        localStorage.setItem("sentinel_current_user", JSON.stringify(u));
-        setUser(u);
-        setDemo(false);
-        setCases([demoCase]);
-        setCurrent(demoCase);
-        setSummary(demoSummary());
-        setAlerts(demoAlerts);
-        setDatasets([demoDataset]);
-        setGraphTx(demoAlerts[0]?.txid || "");
-        closeAuth();
-        setNotice("Account created. Welcome to Sentinel Tool.");
-      }
+      const u = await api("/auth/signup", {
+        method: "POST",
+        body: JSON.stringify({ name, email, password }),
+      });
+      localStorage.setItem("sentinel_current_user", JSON.stringify(u));
+      setUser(u);
+      await loadCases();
+      closeAuth();
+      setNotice("Account created. Welcome to Sentinel Tool.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -423,6 +407,7 @@ export default function App() {
       pendingDataset.current = result.id;
       setNotice(`Analyzing dataset "${result.filename || file.name}". Pipeline running…`);
       setPage("Datasets");
+      setSelectedDataset(null);
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -438,6 +423,16 @@ export default function App() {
     }
     navigate("Datasets");
     datasetInput.current?.click();
+  }
+  function onDatasetSelected(file: File | undefined) {
+    if (!file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!ext || !["csv", "json", "xml"].includes(ext)) {
+      setError("Unsupported file format. Please upload a .csv, .json, or .xml file.");
+      return;
+    }
+    setSelectedDataset(file);
+    void upload(file);
   }
   async function signOut() {
     setBusy(true);
@@ -737,10 +732,10 @@ export default function App() {
             type="file"
             accept=".csv,.json,.xml"
             hidden
-            disabled={!canWrite || busy}
+            disabled={(!demo && !canWrite) || busy}
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) void upload(file);
+              onDatasetSelected(file);
               e.target.value = "";
             }}
           />
@@ -1118,10 +1113,23 @@ export default function App() {
                   <button
                     className={`button primary ${!canWrite ? "disabled" : ""}`}
                     onClick={chooseDataset}
+                    disabled={!canWrite || busy}
                   >
                     <Plus size={16} />
                     {busy ? "Processing…" : "Choose a dataset"}
                   </button>
+                  {selectedDataset && (
+                    <div className="dataset-selection">
+                      <span>{selectedDataset.name}</span>
+                      <button
+                        className="button small"
+                        disabled={busy}
+                        onClick={() => void upload(selectedDataset)}
+                      >
+                        Import Dataset <Upload size={14} />
+                      </button>
+                    </div>
+                  )}
                   {demo && (
                     <button
                       className="text-button"
@@ -1450,10 +1458,10 @@ export default function App() {
                   name="password"
                   type="password"
                   autoComplete={signup ? "new-password" : "current-password"}
-                  minLength={signup ? 4 : 1}
+                  minLength={signup ? 12 : 1}
                   maxLength={256}
                   required
-                  placeholder={signup ? "At least 4 characters" : "Enter your password"}
+                  placeholder={signup ? "At least 12 characters" : "Enter your password"}
                 />
               </label>
               {signup && (
@@ -1463,10 +1471,10 @@ export default function App() {
                     name="confirmPassword"
                     type="password"
                     autoComplete="new-password"
-                    minLength={4}
+                    minLength={12}
                     maxLength={256}
                     required
-                    placeholder="Enter the password again"
+                    placeholder="Enter the password again (at least 12 characters)"
                   />
                 </label>
               )}
