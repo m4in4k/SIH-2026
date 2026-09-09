@@ -129,7 +129,7 @@ def test_expired_sessions_csrf_and_logout(client):
 
 def test_login_throttling(client):
     account(client,login=False)
-    for _ in range(8):
+    for _ in range(20):
         assert client.post('/api/auth/login',json={'email':'admin@example.org','password':'wrong'}).status_code==401
     assert client.post('/api/auth/login',json={'email':'admin@example.org','password':'wrong'}).status_code==429
 

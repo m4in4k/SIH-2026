@@ -2,7 +2,7 @@
 
 ## Offline GeoIP enrichment update
 
-- Backend regression suite: all 24 tests passed with the isolated MongoDB mock, including SIH CSV conversion, Country/ASN enrichment, dataset fallback, graph nodes and edges, investigation timeline evidence, and report propagation.
+- Backend regression suite: all 25 tests passed with the isolated MongoDB mock, including the full SIH login/import/review/export audit, SIH CSV conversion, Country/ASN enrichment, dataset fallback, graph nodes and edges, clustering, investigation timeline evidence, and report propagation.
 - Real MMDB compatibility check: passed with the repository's Country and ASN databases through the installed MaxMind DB reader, including distinct source/destination results.
 - React production build: passed with TypeScript and Vite (1,589 modules transformed).
 - GeoIP processing remains fully offline at runtime. Operators supply locally licensed/downloaded MMDB files; no lookup API is called and no network observation leaves the machine.

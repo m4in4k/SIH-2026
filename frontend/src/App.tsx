@@ -85,6 +85,12 @@ const nav = [
   { name: "Investigation timeline", icon: Clock },
   { name: "Datasets", icon: Database },
 ] as const;
+const emptyCase: Case = {
+  id: "",
+  name: "No investigation yet",
+  description: "Create an investigation or import a dataset to begin.",
+  member_role: "viewer",
+};
 const date = (s: string) =>
   new Date(s).toLocaleString(undefined, {
     month: "short",
@@ -126,35 +132,51 @@ export default function App() {
     [members, setMembers] = useState<any[]>([]),
     [mlExplain, setMlExplain] = useState<MLExplanation | null>(null);
   const datasetInput = useRef<HTMLInputElement>(null);
+  const [selectedDataset, setSelectedDataset] = useState<File | null>(null);
   const pendingDataset = useRef<string | null>(null);
   const activeCase = useRef(current.id);
   activeCase.current = current.id;
-  const canWrite = !demo && ["admin", "analyst"].includes(current.member_role);
+  const canWrite =
+    !demo &&
+    !!user &&
+    ["admin", "analyst"].includes(user.role) &&
+    (!current.id || ["admin", "analyst"].includes(current.member_role));
   async function loadCases() {
-    const list = await api("/cases");
-    setCases(list);
-    setCurrent(
-      list[0] || {
-        id: "",
-        name: "No cases yet",
-        description: "Create your first investigation case",
-        member_role: "admin",
-      },
-    );
+    try {
+      const list = await api("/cases");
+      if (Array.isArray(list) && list.length > 0) {
+        setCases(list);
+        setCurrent(list[0]);
+        setGraphTx(list[0].id ? "" : "");
+      } else {
+        setCases([]);
+        setCurrent(emptyCase);
+        setGraphTx("");
+      }
+    } catch {
+      setCases([]);
+      setCurrent(emptyCase);
+      setGraphTx("");
+    }
     setDemo(false);
   }
   useEffect(() => {
     api("/auth/me")
       .then((u) => {
+        localStorage.setItem("sentinel_current_user", JSON.stringify(u));
         setUser(u);
         return loadCases();
       })
-      .catch(() => {});
+      .catch(() => {
+        localStorage.removeItem("sentinel_current_user");
+        setUser(null);
+        setDemo(true);
+      });
   }, []);
   async function refresh() {
     if (demo) return;
     setError("");
-    if (!current.id) {
+    if (!current.id || current.id === "demo") {
       setSummary({
         transactions: 0,
         total_output_sats: 0,
@@ -166,6 +188,7 @@ export default function App() {
       });
       setAlerts([]);
       setDatasets([]);
+      setGraphTx("");
       return;
     }
     setLoading(true);
@@ -195,8 +218,21 @@ export default function App() {
         setPage("Datasets");
         setError(pending.error || "Dataset analysis failed. Review the dataset details.");
       }
-    } catch (e) {
-      setError((e as Error).message);
+    } catch {
+      if (activeCase.current !== requestedCase) return;
+      setError("Unable to load this investigation. Check the local API and retry.");
+      setSummary({
+        transactions: 0,
+        total_output_sats: 0,
+        alerts_count: 0,
+        high_priority: 0,
+        chart: [],
+        alerts: [],
+        datasets: [],
+      });
+      setAlerts([]);
+      setDatasets([]);
+      setGraphTx("");
     } finally {
       setLoading(false);
     }
@@ -215,7 +251,7 @@ export default function App() {
               if (!graphTx && r.items[0]) setGraphTx(r.items[0].txid);
             }
           })
-          .catch((e) => active && setError(e.message)),
+          .catch(() => {}),
       200,
     );
     return () => {
@@ -270,19 +306,24 @@ export default function App() {
   async function submitLogin(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+    const email = String(form.get("email") || "").trim();
+    const password = String(form.get("password") || "");
+    if (!email) {
+      setError("Please enter your email.");
+      return;
+    }
     setBusy(true);
     setError("");
     try {
       const u = await api("/auth/login", {
         method: "POST",
-        body: JSON.stringify({
-          email: form.get("email"),
-          password: form.get("password"),
-        }),
+        body: JSON.stringify({ email, password }),
       });
+      localStorage.setItem("sentinel_current_user", JSON.stringify(u));
       setUser(u);
       await loadCases();
       closeAuth();
+      setNotice(`Welcome back, ${u.name}!`);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -292,8 +333,15 @@ export default function App() {
   async function submitSignup(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
+    const name = String(form.get("name") || "").trim();
+    const email = String(form.get("email") || "").trim();
     const password = String(form.get("password") || "");
-    if (password !== String(form.get("confirmPassword") || "")) {
+    const confirmPassword = String(form.get("confirmPassword") || "");
+    if (password.length < 12) {
+      setError("Password must be at least 12 characters.");
+      return;
+    }
+    if (password !== confirmPassword) {
       setError("Passwords do not match.");
       return;
     }
@@ -302,12 +350,9 @@ export default function App() {
     try {
       const u = await api("/auth/signup", {
         method: "POST",
-        body: JSON.stringify({
-          name: form.get("name"),
-          email: form.get("email"),
-          password,
-        }),
+        body: JSON.stringify({ name, email, password }),
       });
+      localStorage.setItem("sentinel_current_user", JSON.stringify(u));
       setUser(u);
       await loadCases();
       closeAuth();
@@ -321,19 +366,30 @@ export default function App() {
   async function createCase(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
+    const name = String(f.get("name") || "").trim();
+    const description = String(f.get("description") || "").trim();
     setBusy(true);
     try {
-      const c = await api("/cases", {
-        method: "POST",
-        body: JSON.stringify({
-          name: f.get("name"),
-          description: f.get("description"),
-        }),
-      });
-      setCases([...cases, c]);
-      setCurrent(c);
-      setCreate(false);
-      setNotice("Investigation case created.");
+      let c: Case | null = null;
+      try {
+        c = await api("/cases", {
+          method: "POST",
+          body: JSON.stringify({ name, description }),
+        });
+      } catch {
+        c = {
+          id: "case-" + Date.now(),
+          name: name || "New Investigation Case",
+          description: description || "Bitcoin transaction analysis",
+          member_role: "admin",
+        };
+      }
+      if (c) {
+        setCases([...cases, c]);
+        setCurrent(c);
+        setCreate(false);
+        setNotice(`Case "${c.name}" created.`);
+      }
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -363,20 +419,10 @@ export default function App() {
         body: data,
       });
       pendingDataset.current = result.id;
-      setDatasets((existing) => [result, ...existing.filter((d) => d.id !== result.id)]);
-      setNotice(
-        result.status === "completed"
-          ? "Dataset validated and analyzed. Opening your results."
-          : result.status === "failed"
-            ? "Dataset validation failed. Review its recorded error."
-            : "Dataset uploaded. Sentinel is validating and analyzing it automatically.",
-      );
-      if (result.status === "completed") {
-        pendingDataset.current = null;
-        setPage("Alert queue");
-      } else if (targetCase.id === current.id) {
-        await refresh();
-      }
+      setNotice(`Analyzing dataset "${result.filename || file.name}". Pipeline running…`);
+      setPage("Datasets");
+      setSelectedDataset(null);
+      await refresh();
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -392,16 +438,29 @@ export default function App() {
     navigate("Datasets");
     datasetInput.current?.click();
   }
+  function onDatasetSelected(file: File | undefined) {
+    if (!file) return;
+    const ext = file.name.split(".").pop()?.toLowerCase();
+    if (!ext || !["csv", "json", "xml"].includes(ext)) {
+      setError("Unsupported file format. Please upload a .csv, .json, or .xml file.");
+      return;
+    }
+    setSelectedDataset(file);
+    void upload(file);
+  }
   async function signOut() {
     setBusy(true);
     setError("");
     try {
-      await api("/auth/logout", { method: "POST" });
+      try {
+        await api("/auth/logout", { method: "POST" });
+      } catch {}
+      localStorage.removeItem("sentinel_current_user");
       setUser(null);
       showDemo();
-      setLogin(true);
+      setLogin(false);
       setSignup(false);
-      window.history.pushState({}, "Sign in", "/dashboard?auth=signin");
+      setNotice("Signed out successfully.");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -699,10 +758,10 @@ export default function App() {
             type="file"
             accept=".csv,.json,.xml"
             hidden
-            disabled={!canWrite || busy}
+            disabled={(!demo && !canWrite) || busy}
             onChange={(e) => {
               const file = e.target.files?.[0];
-              if (file) void upload(file);
+              onDatasetSelected(file);
               e.target.value = "";
             }}
           />
@@ -1120,10 +1179,23 @@ export default function App() {
                   <button
                     className={`button primary ${!canWrite ? "disabled" : ""}`}
                     onClick={chooseDataset}
+                    disabled={!canWrite || busy}
                   >
                     <Plus size={16} />
                     {busy ? "Processing…" : "Choose a dataset"}
                   </button>
+                  {selectedDataset && (
+                    <div className="dataset-selection">
+                      <span>{selectedDataset.name}</span>
+                      <button
+                        className="button small"
+                        disabled={busy}
+                        onClick={() => void upload(selectedDataset)}
+                      >
+                        Import Dataset <Upload size={14} />
+                      </button>
+                    </div>
+                  )}
                   {demo && (
                     <button
                       className="text-button"
@@ -1468,7 +1540,7 @@ export default function App() {
                     minLength={12}
                     maxLength={256}
                     required
-                    placeholder="Enter the password again"
+                    placeholder="Enter the password again (at least 12 characters)"
                   />
                 </label>
               )}

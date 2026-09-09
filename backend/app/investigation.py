@@ -47,7 +47,7 @@ class Filters(BaseModel):
         return self
 
 class AlertFilters(Filters):
-    severity:Literal['all','high','medium']='all'
+    severity:Literal['all','critical','high','medium','low']='all'
     status:Literal['all','open','reviewed']='all'
     stage:Literal['all','rule_detection','model_scoring','unknown']='all'
     min_score:float|None=Field(default=None,ge=0,le=100,allow_inf_nan=False)
@@ -95,7 +95,7 @@ def search_alerts(case_id:str,f:Annotated[AlertFilters,Query()],user=Depends(cur
     if f.min_score is not None:
         query['score']={'$gte':f.min_score};query['model_version']={'$not':{'$regex':'^rules-only'}}
     col=database().alerts
-    return {'items':[public(a) for a in col.find(query).sort([('severity',1),('score',-1),('_id',1)]).skip(f.offset).limit(f.limit)],'total':col.count_documents(query)}
+    return {'items':[public(a) for a in col.find(query).sort([('priority_rank',-1),('risk_score',-1),('score',-1),('_id',1)]).skip(f.offset).limit(f.limit)],'total':col.count_documents(query)}
 
 @router.get('/{case_id}/transaction-details/{txid}')
 def transaction_details(case_id:str,txid:str,user=Depends(current_user)):
@@ -111,11 +111,16 @@ def transaction_details(case_id:str,txid:str,user=Depends(current_user)):
     spenders=list(db.transactions.find({**base,'inputs.prev_txid':txid},{'txid':1,'inputs':1}).limit(1001))
     outputs=[{**o,'spending_txids':[s['txid'] for s in spenders[:1000] if any(i['prev_txid']==txid and i['prev_vout']==o['index'] for i in s['inputs'])]} for o in t['outputs']]
     known=bool(inputs) and all(i['resolved'] for i in inputs)
+    network=list(db.observations.find({**base,'txid':txid}).limit(100))
     return {'transaction':public(t),'inputs':inputs,'outputs':outputs,
+        'correlation':{'ip_observations':[public(o) for o in network],
+            'input_addresses':t.get('input_addresses',[]),'output_addresses':t.get('output_addresses',[]),
+            'input_amounts':t.get('input_amounts',[]),'output_amounts':t.get('output_amounts',[]),
+            'geo_country':t.get('geo_country'),'asn':t.get('asn'),'asn_org':t.get('asn_org')},
         'dataset':public(db.datasets.find_one({'_id':t['dataset_id'],'case_id':case_id})),
         'alerts':[public(a) for a in db.alerts.find({**base,'txid':txid})],
         'features':[public(a) for a in db.features.find({**base,'txid':txid})],
-        'observations':[public(a) for a in db.observations.find({**base,'txid':txid}).limit(100)],
+        'observations':[public(a) for a in network],
         'metrics':{'output_total_sats':sum(o['value_sats'] for o in outputs),
             'resolved_input_count':sum(i['resolved'] for i in inputs),
             'input_total_sats':sum(i['previous_output']['value_sats'] for i in inputs) if known else None,

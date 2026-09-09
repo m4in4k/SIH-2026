@@ -657,6 +657,12 @@ def analyze(rows: list[dict], observations: list[dict] | None = None, on_stage=N
 
             priority = 'high' if any(s['stage'] == 'rule_detection' for s in signals) else 'medium'
             risk_score = round(max(70 if priority == 'high' else 0, score), 1)
+            signal_stages = {signal['stage'] for signal in signals}
+            detection_method = (
+                'combined' if {'rule_detection', 'model_scoring'} <= signal_stages
+                else 'rule' if 'rule_detection' in signal_stages
+                else 'ml'
+            )
 
             alerts.append({
                 'txid': t['txid'],
@@ -666,11 +672,13 @@ def analyze(rows: list[dict], observations: list[dict] | None = None, on_stage=N
                 'risk_score': risk_score,
                 'confidence_score': risk_score,
                 'confidence_basis': 'Composite investigative lead score; not a probability of criminal activity.',
+                'detection_method': detection_method,
                 'score': score,
                 'reasons': reasons,
                 'status': 'open',
                 'detections': signals,
                 'feature_contributions': named_contributions[:8],  # top 8 for display
+                'feature_evidence': named_contributions[:8],
                 'first_detected_stage': signals[0]['stage'],
                 'detection_stages': list(dict.fromkeys(x['stage'] for x in signals)),
                 'detected_at': signals[0]['detected_at'],

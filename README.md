@@ -165,6 +165,31 @@ JSON accepts a list of transactions or an object with `transactions` and optiona
 - SIH rows may also use `timestamp`, `txid`, `input_addresses`, `output_addresses`, `input_amounts`, `output_amounts`, `src_ip`, `dst_ip`, `src_port`, `dst_port`, `geo_country`, and `ASN`. Amount arrays are interpreted as BTC and converted to integer satoshis before normal `Transaction` validation. Address-only inputs are retained as unresolved references; no wallet ownership is inferred.
 - Limits: 4 MB/file on Vercel (to stay below its 4.5 MB function body limit), 10 MB/file when self-hosted, 10,000 transaction records/file, 500 inputs or outputs/record, and 100,000 records/case for summary scans. These are explicit prototype bounds, not Bitcoin protocol limits.
 
+## SIH 2026 technical flow
+
+The normalized SIH correlation record keeps network and blockchain evidence connected by TXID. It retains timestamp, source/destination IP and ports, input/output address arrays, input/output amounts, country, ASN, ASN organization, and fee. Network observations remain separately normalized and linked to the same transaction for auditability; they do not prove physical identity, transaction origin, or wallet ownership.
+
+```text
+CSV / JSON / XML -> validation -> normalization -> local GeoIP/ASN enrichment
+-> feature engineering -> rule detection -> Isolation Forest
+-> risk scoring -> ranked, explainable alerts -> graph / investigation evidence
+```
+
+Isolation Forest is used because it surfaces multivariate outliers without requiring labeled criminal examples. Features are input count, output count, log output total, largest-output share, log fee rate, and missing-fee state. Explanations list triggered rules and calculated feature evidence, not unsupported model attribution or crime probabilities. GeoIP is enrichment metadata only; missing databases and private or unknown IPs degrade gracefully.
+
+Analysis runs offline after installation: MongoDB, the worker, Isolation Forest, and GeoIP2 use local processes/files, configured with `GEOIP_COUNTRY_DB` and `GEOIP_ASN_DB`. Native Linux deployment is:
+
+```bash
+./scripts/setup_linux.sh
+./scripts/start_linux.sh
+./scripts/check_linux.sh
+./scripts/stop_linux.sh
+```
+
+The scripts check prerequisites, install dependencies, verify GeoIP files, create runtime directories, and start MongoDB, FastAPI, the worker, and Vite with PID/log files under `.runtime/`.
+
+On Ubuntu/Debian, install Python 3.12+, Node.js 20+, pnpm, MongoDB (`mongod` and `mongosh`), and curl using the distribution-approved repositories before running setup. Setup installs Python and frontend dependencies once; normal start/check/stop operation uses only local processes and files.
+
 ## Analysis behavior and limits
 
 Rules detect fan-in/fan-out, peel chains, structuring, round outputs, off-hours large transfers, cross-border relays, and Tor/VPN relay evidence. Isolation Forest uses 14 blockchain and network features: input/output counts, value and fee measures, output entropy and roundness, time, transaction size, unique relay IP count, cross-border activity, and Tor/VPN evidence. Parameters: 200 estimators, random seed 42, one training thread.
@@ -206,6 +231,17 @@ SENTINEL_TEST_MONGO_URI='mongodb://127.0.0.1:27017' PYTHONPATH=backend .venv/bin
 ```
 
 Each test creates a randomly named `sentinel_test_*` database and deletes only that database after the test. Never point tests at a shared production database without reviewing the test configuration.
+
+## SIH 2026 Requirement Coverage
+
+- **Network/blockchain correlation:** `backend/app/analysis.py` normalizes SIH CSV/JSON/XML data; `backend/app/models.py` preserves IP, port, TXID, address, amount, country, ASN, organization, timestamp, and fee fields; Mongo observations retain the linked TXID.
+- **Investigation graph:** `backend/app/main.py` builds database-backed IP, transaction, wallet, country, and ASN nodes with observed-only edges; `frontend/src/Graph.tsx` exposes node metadata and opens transaction evidence for TXID selection.
+- **Evidence and reports:** `backend/app/investigation.py` provides transaction details, correlation, network observations, detection evidence, and timeline data; `backend/app/main.py` exports ranked alerts, transactions, features, observations, datasets, and audit records.
+- **Explainable detection:** `backend/app/analysis.py` keeps Isolation Forest and rule detection, stores calculated feature evidence, scores, reasons, detection method (`rule`, `ml`, or `combined`), and priority rank.
+- **Ranked alerts and failure handling:** `backend/app/worker.py` records stages, cleans partial writes, and marks failures visibly; alert APIs sort by priority/risk/model score.
+- **Offline operation:** `backend/app/geoip.py` uses local `.mmdb` files only, with `GEOIP_COUNTRY_DB` and `GEOIP_ASN_DB`; MongoDB, worker, frontend, and analysis run locally.
+- **Linux deployment:** `scripts/setup_linux.sh`, `scripts/start_linux.sh`, `scripts/check_linux.sh`, and `scripts/stop_linux.sh` provide prerequisite checks and native lifecycle management. Script syntax was verified on macOS; Linux execution was not claimed here.
+- **Testing:** `backend/tests/test_workflow.py` covers ingestion formats, validation, GeoIP behavior, correlation, graph edges, anomaly/rule scoring, ranking, explanations, and failed datasets. Frontend TypeScript/build checks are available; browser-level testing is not included.
 
 ## Private-network or future public deployment
 
