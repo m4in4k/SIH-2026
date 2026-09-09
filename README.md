@@ -4,6 +4,18 @@ An AI-powered Sentinel Tool platform for offline or private-network Bitcoin inve
 
 Submission documentation: [technical approach, model, and explainability](TECHNICAL_WRITEUP.md) and [offline Linux workflow](OFFLINE.md).
 
+## Backend-free localhost demo
+
+The complete synthetic dashboard, graph, GeoIP view, clusters, alerts, and ML explanation screens can run locally without MongoDB or FastAPI. On Windows, double-click `scripts/start-local-demo.cmd`. From any supported terminal, build once and start it with:
+
+```bash
+pnpm --dir frontend install --frozen-lockfile --ignore-scripts
+pnpm --dir frontend run build
+pnpm --dir frontend run local
+```
+
+Open `http://127.0.0.1:4173/dashboard`. This mode uses bundled synthetic data in browser memory; uploads, user accounts, persistence, and analysis of new files require the local backend or offline Compose release.
+
 ## Investigation enhancements
 
 - **Transactions → Advanced filters:** combine a dataset, explicit observation/block time range (UTC), output total in satoshis, fee rate, input/output counts, confirmation snapshot, script type, and alert presence. Sort and paginate the filtered results. Missing values do not match numeric or date ranges.
