@@ -55,6 +55,8 @@ def test_complete_import_analysis_review_export(client):
     assert summary['transactions']==180 and summary['high_priority']>=4
     alerts=client.get(f'/api/cases/{cid}/alerts').json();assert alerts
     alert=alerts[0]
+    assert alert['alert_id'] and alert['detection_method'] in {'rule','ml','combined'}
+    assert alert['priority_rank'] >= 2 and alert['reasons'] and len(alert['feature_evidence']) == 6
     graph=client.get(f'/api/cases/{cid}/graph/{alert["txid"]}').json()
     ids={n['data']['id'] for n in graph['nodes']}
     assert alert['txid'] in ids
@@ -180,6 +182,16 @@ def test_sih_csv_geoip_enrichment_and_full_worker_flow(client,monkeypatch):
     assert observation['src_country']=='IN'
     assert observation['src_asn']=='AS64500'
     assert observation['src_asn_org']=='Example ASN'
+    detail=client.get(f'/api/cases/{cid}/transaction-details/{txid}').json()
+    assert detail['transaction']['input_addresses']==['input-address']
+    assert detail['transaction']['output_addresses']==['output-address']
+    assert detail['correlation']['output_amounts']==[99900000]
+    graph=client.get(f'/api/cases/{cid}/graph/{txid}').json()
+    nodes={node['data']['id']:node['data'] for node in graph['nodes']}
+    edges={(edge['data']['source'],edge['data']['target']) for edge in graph['edges']}
+    assert 'ip:8.8.8.8' in nodes and 'wallet:output-address' in nodes
+    assert ('ip:8.8.8.8',txid) in edges and (txid,'wallet:output-address') in edges
+    assert any(data['kind']=='country' for data in nodes.values())
 
 def test_missing_geoip_databases_do_not_fail_analysis(client,monkeypatch):
     monkeypatch.setattr(geoip, '_readers', lambda: (None, None))

@@ -68,6 +68,10 @@ export function DetectionEvidence({
           </span>
         </div>
         <div>
+          <small>Detection method</small>
+          <span>{alert.detection_method || "Not recorded"}</span>
+        </div>
+        <div>
           <small>Anomaly score</small>
           <span>
             {alert.model_version?.startsWith("rules-only") ? "Not scored" : `${alert.score}/100`}
@@ -118,6 +122,10 @@ export function DetectionEvidence({
           </small>
         </article>
       ))}
+      <div className="safeguard">
+        <Info size={16} />
+        <p><strong>Why this was flagged:</strong> {alert.reasons?.join(" ") || "No explanation was recorded."}</p>
+      </div>
       <div className="pipeline-strip">
         {[
           "validation",
@@ -323,8 +331,10 @@ function FilterFields({
       {alerts &&
         select("severity", "Priority", [
           ["all", "All priorities"],
+          ["critical", "Critical"],
           ["high", "High"],
           ["medium", "Medium"],
+          ["low", "Low"],
         ])}
       {alerts &&
         select("status", "Review status", [

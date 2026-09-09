@@ -280,7 +280,7 @@ def transactions(case_id:str,q:str=Query('',max_length=200),offset:int=Query(0,g
 @app.get('/api/cases/{case_id}/alerts')
 def alerts(case_id:str,user=Depends(current_user)):
     access(case_id,user)
-    return [public(a) for a in database().alerts.find(completed_scope(case_id)).sort([('severity',1),('score',-1)]).limit(1000)]
+    return [public(a) for a in database().alerts.find(completed_scope(case_id)).sort([('priority_rank',-1),('risk_score',-1),('score',-1),('_id',1)]).limit(1000)]
 
 @app.patch('/api/cases/{case_id}/alerts/{alert_id}')
 def update_alert(case_id:str,alert_id:str,body:Review,user=Depends(current_user)):
@@ -338,9 +338,12 @@ def graph(case_id:str,txid:str,user=Depends(current_user)):
         frontier=nxt
     graph=nx.DiGraph()
     for t in chosen.values():
-        graph.add_node(t['txid'],kind='transaction',label=t['txid'][:7]+'…',focus=t['txid']==txid)
+        graph.add_node(t['txid'],kind='transaction',label=t['txid'][:7]+'…',focus=t['txid']==txid,
+                       timestamp=t.get('observed_at') or t.get('block_time'),amount_sats=t.get('amount_sats') or sum(o['value_sats'] for o in t['outputs']),
+                       fee_sats=t.get('fee_sats'),input_addresses=t.get('input_addresses',[]),output_addresses=t.get('output_addresses',[]),related_ips=[])
     # Keep connecting outputs even when visual output limits hide unrelated outputs.
     required={(i['prev_txid'],i['prev_vout']) for t in chosen.values() for i in t['inputs']}
+    wallet_meta={}
     for t in chosen.values():
         shown=[o for o in t['outputs'] if (t['txid'],o['index']) in required]
         shown.extend(o for o in t['outputs'][:8] if o not in shown)
@@ -348,21 +351,39 @@ def graph(case_id:str,txid:str,user=Depends(current_user)):
         for o in shown:
             address=o.get('address')
             oid=f'wallet:{address}' if address else f'{t["txid"]}:{o["index"]}'
-            graph.add_node(oid,kind='wallet' if address else 'output',label=address or f'{o["value_sats"]/1e8:.5g} BTC',focus=False)
+            if address:
+                meta=wallet_meta.setdefault(address, {'related_txids':set(), 'roles':set(), 'total_observed_sats':0})
+                meta['related_txids'].add(t['txid']);meta['roles'].add('output');meta['total_observed_sats']+=o['value_sats']
+            graph.add_node(oid,kind='wallet' if address else 'output',label=address or f'{o["value_sats"]/1e8:.5g} BTC',focus=False,
+                           related_txids=sorted(wallet_meta.get(address,{}).get('related_txids',[])),
+                           roles=sorted(wallet_meta.get(address,{}).get('roles',[])),
+                           total_observed_sats=wallet_meta.get(address,{}).get('total_observed_sats'))
             graph.add_edge(t['txid'],oid,label='sent to' if address else 'creates')
     for t in chosen.values():
         for i in t['inputs']:
-            oid=f'{i["prev_txid"]}:{i["prev_vout"]}'
-            if oid in graph:
-                graph.add_edge(oid,t['txid'],label='spent by')
+            address=(t.get('input_addresses') or [])[t['inputs'].index(i)] if t.get('input_addresses') and t['inputs'].index(i)<len(t['input_addresses']) else None
+            oid=f'wallet:{address}' if address else f'{i["prev_txid"]}:{i["prev_vout"]}'
+            if address:
+                meta=wallet_meta.setdefault(address, {'related_txids':set(), 'roles':set(), 'total_observed_sats':0})
+                meta['related_txids'].add(t['txid']);meta['roles'].add('input')
+                graph.add_node(oid,kind='wallet',label=address,focus=False,related_txids=sorted(meta['related_txids']),roles=sorted(meta['roles']),total_observed_sats=meta['total_observed_sats'])
+            if oid in graph: graph.add_edge(oid,t['txid'],label='spent by' if address else 'input reference')
     for observation in db.observations.find({**query,'txid':{'$in':list(chosen)}}).limit(100):
         for field in ('src_ip','dst_ip'):
             ip=observation.get(field)
             if not ip:
                 continue
             node_id=f'ip:{ip}'
-            graph.add_node(node_id,kind='ip',label=ip,focus=False,country=observation.get('country'),asn=observation.get('asn'))
+            existing=graph.nodes[node_id] if node_id in graph else {}
+            related=sorted(set(existing.get('related_txids',[])) | {observation['txid']})
+            graph.add_node(node_id,kind='ip',label=ip,focus=False,country=observation.get('country'),asn=observation.get('asn'),asn_org=observation.get('asn_org'),related_txids=related)
+            graph.nodes[observation['txid']]['related_ips']=sorted(set(graph.nodes[observation['txid']].get('related_ips',[])) | {ip})
             graph.add_edge(node_id,observation['txid'],label='observed')
+            for kind,value,label in [('country',observation.get('country'),'located in'),('asn',observation.get('asn'),'announced by')]:
+                if value:
+                    entity=f'{kind}:{value}'
+                    graph.add_node(entity,kind=kind,label=value,focus=False)
+                    graph.add_edge(node_id,entity,label=label)
     return {'nodes':[{'data':{'id':n,**attrs}} for n,attrs in graph.nodes(data=True)],
             'edges':[{'data':{'id':f'{a}>{b}','source':a,'target':b,**attrs}} for a,b,attrs in graph.edges(data=True)],
             'truncated':truncated,'network_observations':[public(o) for o in db.observations.find({**query,'txid':txid}).limit(50)],
@@ -372,7 +393,7 @@ def graph(case_id:str,txid:str,user=Depends(current_user)):
 def report(case_id:str,user=Depends(current_user)):
     c,_=access(case_id,user);query=completed_scope(case_id);db=database()
     audit(user['_id'],case_id,'report_exported',{})
-    signal_records=list(db.alerts.find(query).sort('score',-1).limit(1000))
+    signal_records=list(db.alerts.find(query).sort([('priority_rank',-1),('risk_score',-1),('score',-1)]).limit(1000))
     ids=list({a['txid'] for a in signal_records})
     evidence=[public(t) for t in db.transactions.find({**query,'txid':{'$in':ids}})]
     return {'schema_version':'1.1','exported_at':now(),'case':public(c),'disclaimer':DISCLAIMER,

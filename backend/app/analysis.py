@@ -58,6 +58,7 @@ def _flat_csv_row(row, record):
         'observed_at': row.get('timestamp') or row.get('observed_at') or None,
         'inputs': inputs,
         'outputs': outputs,
+        'amount_sats': total_sats,
         'fee_sats': _btc_to_sats(row['fee_btc'], 'fee_btc', record),
         'vsize': 1,
     }
@@ -90,8 +91,19 @@ def _sih_row(row, record):
     outputs = [{'index': index, 'value_sats': _btc_to_sats(amount, 'output_amounts', record),
                 'address': str(address).strip() or None}
                for index, (address, amount) in enumerate(zip(output_addresses, output_amounts))]
+    ports = {key: (int(row[key]) if row.get(key) not in (None, '') else None) for key in ('src_port', 'dst_port')}
     normalized = {'txid': txid, 'observed_at': row.get('timestamp') or row.get('observed_at'),
-                  'inputs': inputs, 'outputs': outputs, 'fee_sats': None, 'vsize': 1}
+                  'inputs': inputs, 'outputs': outputs, 'fee_sats': None, 'vsize': 1,
+                  'src_ip': row.get('src_ip'), 'dst_ip': row.get('dst_ip'),
+                  **ports,
+                  'input_addresses': [str(address).strip() for address in input_addresses],
+                  'output_addresses': [str(address).strip() for address in output_addresses],
+                  'input_amounts': [_btc_to_sats(amount, 'input_amounts', record) for amount in values('input_amounts')],
+                  'output_amounts': [_btc_to_sats(amount, 'output_amounts', record) for amount in output_amounts],
+                  'amount_sats': sum(_btc_to_sats(amount, 'output_amounts', record) for amount in output_amounts),
+                  'geo_country': row.get('geo_country') or row.get('country'),
+                  'asn': row.get('asn') or row.get('ASN'), 'asn_org': row.get('asn_org'),
+                  '_normalized_sih': True}
     if row.get('fee_btc') not in (None, ''):
         normalized['fee_sats'] = _btc_to_sats(row['fee_btc'], 'fee_btc', record)
     return normalized
@@ -161,7 +173,7 @@ def parse(content: bytes, filename: str):
             for key in ['peer_port', 'src_port', 'dst_port']:
                 if observation.get(key):
                     observation[key] = int(observation[key])
-    if rows and isinstance(rows[0], dict) and {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}.issubset(rows[0]):
+    if rows and isinstance(rows[0], dict) and not rows[0].get('_normalized_sih') and {'txid', 'input_addresses', 'output_addresses', 'input_amounts', 'output_amounts'}.issubset(rows[0]):
         observations.extend(filter(None, (_network_observation(row) for row in rows)))
         rows = [_sih_row(row, number) for number, row in enumerate(rows, 1)]
     if not isinstance(rows, list) or not 1 <= len(rows) <= MAX_RECORDS:
@@ -248,25 +260,30 @@ def analyze(rows, on_stage=None):
         stage('model_scoring','skipped',reason='At least 40 records are required; rules remain active.')
     stage('alert_generation','started')
     alerts=[];features=[]
+    feature_names=['input_count','output_count','log_output_total','largest_output_share','log_fee_rate','fee_rate_missing']
     for t,vector,score,signals in zip(rows,vectors,scores,detections):
         version=MODEL_VERSION if len(rows)>=40 else 'rules-only-v2'
         if signals:
             reasons=[signal['reason'] for signal in signals]
             reasons.append(f'Feature evidence: {len(t["inputs"])} inputs, {len(t["outputs"])} outputs, total {sum(o["value_sats"] for o in t["outputs"])} satoshis. Descriptive evidence, not exact model attribution.')
-            priority='high' if signals[0]['stage']=='rule_detection' else 'medium'
-            risk_score=round(max(70 if priority == 'high' else 0, score), 1)
+            stages=list(dict.fromkeys(x['stage'] for x in signals))
+            detection_method='combined' if len(stages)>1 else ('ml' if stages[0]=='model_scoring' else 'rule')
+            priority='high' if detection_method in {'rule', 'combined'} else 'medium'
+            risk_score=round(max(85 if priority == 'critical' else 70 if priority == 'high' else 0, score), 1)
             alerts.append({'txid':t['txid'],'title':signals[0]['title'],
-                'severity':priority,'priority':priority,'risk_score':risk_score,
+                'severity':priority,'priority':priority,'priority_rank':{'critical':4,'high':3,'medium':2,'low':1}[priority],
+                'risk_score':risk_score,'detection_method':detection_method,
+                'feature_evidence':dict(zip(feature_names, vector)),
                 'score':score,'reasons':reasons,'status':'open','detections':signals,
-                'first_detected_stage':signals[0]['stage'],'detection_stages':list(dict.fromkeys(x['stage'] for x in signals)),
+                'first_detected_stage':signals[0]['stage'],'detection_stages':stages,
                 'detected_at':signals[0]['detected_at'],'transaction_observed_at':t.get('observed_at'),
                 'transaction_block_time':t.get('block_time'),'created_at':datetime.now(timezone.utc),
                 'alternative':'Payment batching, wallet consolidation, or other ordinary activity may explain this pattern. Ownership and intent remain unknown.',
                 'model_version':version})
         features.append({'txid':t['txid'],'values':vector,'score':score,'model_version':version,
-            'feature_names':['input_count','output_count','log_output_total','largest_output_share','log_fee_rate','fee_rate_missing']})
+            'feature_names':feature_names})
     stage('alert_generation','completed',alerts=len(alerts))
-    return sorted(alerts,key=lambda a:(a['severity']=='high',a['score']),reverse=True),features
+    return sorted(alerts,key=lambda a:(a['priority_rank'],a['risk_score'],a['score']),reverse=True),features
 
 def training_data():
     """Synthetic UTXO-consistent branching trace, not real blockchain transactions."""

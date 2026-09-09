@@ -8,14 +8,15 @@ try:
 except ImportError:  # Keeps validation and analysis usable before dependencies are installed.
     Reader = None
 
-COUNTRY_DB_ENV = 'SENTINEL_GEOIP_COUNTRY_DB'
-ASN_DB_ENV = 'SENTINEL_GEOIP_ASN_DB'
+COUNTRY_DB_ENV = 'GEOIP_COUNTRY_DB'
+ASN_DB_ENV = 'GEOIP_ASN_DB'
 DEFAULT_COUNTRY_DB = 'geoip/GeoLite2-Country.mmdb'
 DEFAULT_ASN_DB = 'geoip/GeoLite2-ASN.mmdb'
 
 
 def _path(name, default):
-    return os.getenv(name, default).strip() or default
+    legacy = {'GEOIP_COUNTRY_DB': 'SENTINEL_GEOIP_COUNTRY_DB', 'GEOIP_ASN_DB': 'SENTINEL_GEOIP_ASN_DB'}[name]
+    return os.getenv(name, os.getenv(legacy, default)).strip() or default
 
 
 @lru_cache(maxsize=1)

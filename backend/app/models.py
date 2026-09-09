@@ -78,6 +78,19 @@ class Transaction(BaseModel):
     outputs: list[Output] = Field(min_length=1, max_length=500)
     fee_sats: int | None = Field(default=None, ge=0, le=2100000000000000, strict=True)
     vsize: int | None = Field(default=None, ge=1, le=4000000, strict=True)
+    # SIH correlation fields are retained alongside the strict UTXO shape.
+    src_ip: str | None = None
+    dst_ip: str | None = None
+    src_port: int | None = Field(default=None, ge=1, le=65535, strict=True)
+    dst_port: int | None = Field(default=None, ge=1, le=65535, strict=True)
+    input_addresses: list[str] = Field(default_factory=list, max_length=500)
+    output_addresses: list[str] = Field(default_factory=list, max_length=500)
+    input_amounts: list[int] = Field(default_factory=list, max_length=500)
+    output_amounts: list[int] = Field(default_factory=list, max_length=500)
+    amount_sats: int | None = Field(default=None, ge=0, le=2100000000000000, strict=True)
+    geo_country: str | None = None
+    asn: str | None = None
+    asn_org: str | None = None
     @field_validator('observed_at', 'block_time')
     @classmethod
     def timezone_required(cls, value):

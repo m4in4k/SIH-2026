@@ -16,6 +16,7 @@ export default function Graph({
   const ref = useRef<HTMLDivElement>(null),
     cy = useRef<cytoscape.Core | null>(null);
   const [error, setError] = useState("");
+  const [selectedNode, setSelectedNode] = useState<Record<string, unknown> | null>(null);
   const [truncated, setTruncated] = useState(false);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
@@ -125,9 +126,11 @@ export default function Graph({
             },
           ],
         });
-        cy.current.on("tap", 'node[kind="transaction"]', (e) =>
-          onSelect?.(e.target.id()),
-        );
+        cy.current.on("tap", "node", (e) => {
+          const data = e.target.data() as Record<string, unknown>;
+          setSelectedNode(data);
+          if (data.kind === "transaction") onSelect?.(e.target.id());
+        });
         setLoading(false);
       })
       .catch((e) => {
@@ -159,6 +162,15 @@ export default function Graph({
         <small>Mapping transaction flow</small>
       </div>
       {error && <div className="graph-error">{error}</div>}
+      {selectedNode && (
+        <div className="graph-node-detail">
+          <strong>{String(selectedNode.kind || "entity").toUpperCase()}</strong>
+          <span>{String(selectedNode.label || selectedNode.id)}</span>
+          {selectedNode.kind === "ip" && <small>{String(selectedNode.country || "Country unavailable")} · {String(selectedNode.asn || "ASN unavailable")} · {String(selectedNode.asn_org || "ASN organization unavailable")} · TXIDs: {String(selectedNode.related_txids || "none")}</small>}
+          {selectedNode.kind === "transaction" && <small>{String(selectedNode.timestamp || "Timestamp unavailable")} · {String(selectedNode.amount_sats || "Amount unavailable")} sat · fee {String(selectedNode.fee_sats ?? "unknown")} sat · IPs: {String(selectedNode.related_ips || "none")}</small>}
+          {selectedNode.kind === "wallet" && <small>{String(selectedNode.roles || "role unavailable")} · TXIDs: {String(selectedNode.related_txids || "none")} · observed: {String(selectedNode.total_observed_sats ?? "unknown")} sat</small>}
+        </div>
+      )}
       <div className="graph-key">
         <span>
           <i className="key-dot mint" />

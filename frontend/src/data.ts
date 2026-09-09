@@ -51,6 +51,9 @@ export type Alert = {
   title: string;
   severity: string;
   priority?: string;
+  priority_rank?: number;
+  detection_method?: "ml" | "rule" | "combined";
+  feature_evidence?: Record<string, number>;
   risk_score?: number;
   score: number;
   reasons: string[];

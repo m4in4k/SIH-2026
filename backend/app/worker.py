@@ -51,7 +51,8 @@ def process(dataset_id):
         db.datasets.update_one({'_id':dataset_id},{'$set':{'progress':60,'heartbeat':now()}})
         alerts,features=analyze(accepted,on_stage=record_stage)
         for a in alerts:
-            db.alerts.insert_one({'_id':secrets.token_hex(12),**scope,**a})
+            alert_id=secrets.token_hex(12)
+            db.alerts.insert_one({'_id':alert_id,'alert_id':alert_id,**scope,**a})
         for f in features:
             db.features.insert_one({'_id':secrets.token_hex(12),**scope,**f})
         for o in observations:

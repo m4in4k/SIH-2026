@@ -31,8 +31,8 @@ services:
       ALLOWED_ORIGINS: http://localhost:8080,http://127.0.0.1:8080
       CANONICAL_APP_ORIGIN: ""
       SENTINEL_OFFLINE: "true"
-      GEOIP_COUNTRY_DB: /opt/sentinel/geoip/country.mmdb
-      GEOIP_ASN_DB: /opt/sentinel/geoip/asn.mmdb
+      GEOIP_COUNTRY_DB: /opt/sentinel/geoip/GeoLite2-Country.mmdb
+      GEOIP_ASN_DB: /opt/sentinel/geoip/GeoLite2-ASN.mmdb
     volumes:
       - ./geoip:/opt/sentinel/geoip:ro
     ports:
